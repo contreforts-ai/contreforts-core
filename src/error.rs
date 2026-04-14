@@ -1,19 +1,19 @@
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("HTTP request failed: {0}")]
-    Http(#[from] reqwest::Error),
+pub enum AdapterError {
+    #[error("HTTP error: {0}")]
+    Http(String),
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("ERPNext API error: {message}")]
+    #[error("API error: {message}")]
     Api { message: String },
 
     #[error("Authentication failed")]
     Auth,
 
-    #[error("Resource not found: {doctype}/{name}")]
-    NotFound { doctype: String, name: String },
+    #[error("Not found: {kind}/{id}")]
+    NotFound { kind: String, id: String },
 
     #[error("Configuration error: {0}")]
     Config(String),
