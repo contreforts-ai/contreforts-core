@@ -24,7 +24,7 @@ impl EntityKind {
     /// Pennylane API path segment for this entity.
     pub fn pennylane_path(&self) -> &str {
         match self {
-            Self::Customer => "company_customers",
+            Self::Customer => "customers",
             Self::Contact => "contacts",
             Self::Invoice => "customer_invoices",
             Self::Company => "companies",
