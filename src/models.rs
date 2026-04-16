@@ -8,6 +8,8 @@ pub enum EntityKind {
     Contact,
     Invoice,
     Company,
+    CustomerGroup,
+    Territory,
 }
 
 impl EntityKind {
@@ -18,6 +20,8 @@ impl EntityKind {
             Self::Contact => "Contact",
             Self::Invoice => "Sales Invoice",
             Self::Company => "Company",
+            Self::CustomerGroup => "Customer Group",
+            Self::Territory => "Territory",
         }
     }
 
@@ -28,6 +32,8 @@ impl EntityKind {
             Self::Contact => "contacts",
             Self::Invoice => "customer_invoices",
             Self::Company => "companies",
+            Self::CustomerGroup => "customer_groups",
+            Self::Territory => "territories",
         }
     }
 
@@ -38,6 +44,8 @@ impl EntityKind {
             Self::Contact => "contact",
             Self::Invoice => "invoice",
             Self::Company => "company",
+            Self::CustomerGroup => "customer-group",
+            Self::Territory => "territory",
         }
     }
 }
@@ -56,7 +64,9 @@ impl std::str::FromStr for EntityKind {
             "contact" => Ok(Self::Contact),
             "invoice" => Ok(Self::Invoice),
             "company" => Ok(Self::Company),
-            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company)")),
+            "customer-group" => Ok(Self::CustomerGroup),
+            "territory" => Ok(Self::Territory),
+            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory)")),
         }
     }
 }
