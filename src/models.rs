@@ -10,10 +10,17 @@ pub enum EntityKind {
     Company,
     CustomerGroup,
     Territory,
+    Project,
+    Issue,
 }
 
+/// Returned by `pennylane_path()` for entity kinds Pennylane does not expose.
+/// Adapters should short-circuit on this sentinel with an explicit error.
+pub const PENNYLANE_UNSUPPORTED: &str = "__unsupported__";
+
 impl EntityKind {
-    /// ERPNext doctype name for this entity.
+    /// Canonical doctype label — also the ERPNext doctype name where applicable.
+    /// Used by the graph indexer as the RDF class label and subject-IRI segment.
     pub fn erpnext_doctype(&self) -> &str {
         match self {
             Self::Customer => "Customer",
@@ -22,10 +29,13 @@ impl EntityKind {
             Self::Company => "Company",
             Self::CustomerGroup => "Customer Group",
             Self::Territory => "Territory",
+            Self::Project => "Project",
+            Self::Issue => "Issue",
         }
     }
 
-    /// Pennylane API path segment for this entity.
+    /// Pennylane API path segment for this entity, or the `PENNYLANE_UNSUPPORTED`
+    /// sentinel for kinds that have no Pennylane analogue.
     pub fn pennylane_path(&self) -> &str {
         match self {
             Self::Customer => "customers",
@@ -34,6 +44,7 @@ impl EntityKind {
             Self::Company => "companies",
             Self::CustomerGroup => "customer_groups",
             Self::Territory => "territories",
+            Self::Project | Self::Issue => PENNYLANE_UNSUPPORTED,
         }
     }
 
@@ -46,6 +57,8 @@ impl EntityKind {
             Self::Company => "company",
             Self::CustomerGroup => "customer-group",
             Self::Territory => "territory",
+            Self::Project => "project",
+            Self::Issue => "issue",
         }
     }
 }
@@ -66,7 +79,9 @@ impl std::str::FromStr for EntityKind {
             "company" => Ok(Self::Company),
             "customer-group" => Ok(Self::CustomerGroup),
             "territory" => Ok(Self::Territory),
-            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory)")),
+            "project" => Ok(Self::Project),
+            "issue" => Ok(Self::Issue),
+            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue)")),
         }
     }
 }
@@ -111,6 +126,8 @@ mod tests {
             EntityKind::Company,
             EntityKind::CustomerGroup,
             EntityKind::Territory,
+            EntityKind::Project,
+            EntityKind::Issue,
         ] {
             let s = kind.as_str();
             let parsed = EntityKind::from_str(s).expect("parses back");
@@ -137,6 +154,10 @@ mod tests {
         assert_eq!(EntityKind::Invoice.pennylane_path(), "customer_invoices");
         assert_eq!(EntityKind::CustomerGroup.erpnext_doctype(), "Customer Group");
         assert_eq!(EntityKind::CustomerGroup.pennylane_path(), "customer_groups");
+        assert_eq!(EntityKind::Project.erpnext_doctype(), "Project");
+        assert_eq!(EntityKind::Issue.erpnext_doctype(), "Issue");
+        assert_eq!(EntityKind::Project.pennylane_path(), PENNYLANE_UNSUPPORTED);
+        assert_eq!(EntityKind::Issue.pennylane_path(), PENNYLANE_UNSUPPORTED);
     }
 
     #[test]
