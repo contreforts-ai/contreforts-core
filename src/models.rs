@@ -96,3 +96,70 @@ pub struct SyncState {
     pub last_synced: Option<NaiveDateTime>,
     pub count: u64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn entity_kind_as_str_roundtrip() {
+        for kind in [
+            EntityKind::Customer,
+            EntityKind::Contact,
+            EntityKind::Invoice,
+            EntityKind::Company,
+            EntityKind::CustomerGroup,
+            EntityKind::Territory,
+        ] {
+            let s = kind.as_str();
+            let parsed = EntityKind::from_str(s).expect("parses back");
+            assert_eq!(parsed, kind);
+        }
+    }
+
+    #[test]
+    fn entity_kind_from_str_is_case_insensitive() {
+        assert_eq!(EntityKind::from_str("Customer").unwrap(), EntityKind::Customer);
+        assert_eq!(EntityKind::from_str("INVOICE").unwrap(), EntityKind::Invoice);
+        assert_eq!(EntityKind::from_str("customer-group").unwrap(), EntityKind::CustomerGroup);
+    }
+
+    #[test]
+    fn entity_kind_from_str_rejects_unknown() {
+        let err = EntityKind::from_str("unknown-thing").unwrap_err();
+        assert!(err.contains("unknown entity kind"));
+    }
+
+    #[test]
+    fn entity_kind_adapter_paths() {
+        assert_eq!(EntityKind::Invoice.erpnext_doctype(), "Sales Invoice");
+        assert_eq!(EntityKind::Invoice.pennylane_path(), "customer_invoices");
+        assert_eq!(EntityKind::CustomerGroup.erpnext_doctype(), "Customer Group");
+        assert_eq!(EntityKind::CustomerGroup.pennylane_path(), "customer_groups");
+    }
+
+    #[test]
+    fn entity_kind_display_matches_as_str() {
+        assert_eq!(EntityKind::Customer.to_string(), "customer");
+        assert_eq!(EntityKind::CustomerGroup.to_string(), "customer-group");
+    }
+
+    #[test]
+    fn document_serde_roundtrip() {
+        let doc = Document {
+            name: "Acme".into(),
+            remote_id: "CUST-001".into(),
+            kind: EntityKind::Customer,
+            source: "erpnext".into(),
+            modified: None,
+            fields: serde_json::json!({ "email": "x@y.z" }),
+        };
+        let json = serde_json::to_string(&doc).unwrap();
+        let back: Document = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.name, doc.name);
+        assert_eq!(back.remote_id, doc.remote_id);
+        assert_eq!(back.kind, doc.kind);
+        assert_eq!(back.fields, doc.fields);
+    }
+}
