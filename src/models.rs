@@ -2,7 +2,12 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 /// The kinds of entities that adapters can sync.
+///
+/// Wire format is kebab-case (e.g. `"customer"`, `"customer-group"`) so that
+/// JSON over FFI / HTTP / CLI all share the same lowercase identifier produced
+/// by [`EntityKind::as_str`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum EntityKind {
     Customer,
     Contact,
