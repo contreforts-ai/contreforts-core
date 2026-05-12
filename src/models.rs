@@ -17,6 +17,8 @@ pub enum EntityKind {
     Territory,
     Project,
     Issue,
+    Item,
+    Quotation,
 }
 
 /// Returned by `pennylane_path()` for entity kinds Pennylane does not expose.
@@ -36,6 +38,8 @@ impl EntityKind {
             Self::Territory => "Territory",
             Self::Project => "Project",
             Self::Issue => "Issue",
+            Self::Item => "Item",
+            Self::Quotation => "Quotation",
         }
     }
 
@@ -49,6 +53,8 @@ impl EntityKind {
             Self::Company => "companies",
             Self::CustomerGroup => "customer_groups",
             Self::Territory => "territories",
+            Self::Item => "products",
+            Self::Quotation => "quotes",
             Self::Project | Self::Issue => PENNYLANE_UNSUPPORTED,
         }
     }
@@ -64,6 +70,8 @@ impl EntityKind {
             Self::Territory => "territory",
             Self::Project => "project",
             Self::Issue => "issue",
+            Self::Item => "item",
+            Self::Quotation => "quotation",
         }
     }
 }
@@ -86,7 +94,9 @@ impl std::str::FromStr for EntityKind {
             "territory" => Ok(Self::Territory),
             "project" => Ok(Self::Project),
             "issue" => Ok(Self::Issue),
-            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue)")),
+            "item" => Ok(Self::Item),
+            "quotation" => Ok(Self::Quotation),
+            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue|item|quotation)")),
         }
     }
 }
@@ -133,6 +143,8 @@ mod tests {
             EntityKind::Territory,
             EntityKind::Project,
             EntityKind::Issue,
+            EntityKind::Item,
+            EntityKind::Quotation,
         ] {
             let s = kind.as_str();
             let parsed = EntityKind::from_str(s).expect("parses back");
@@ -163,6 +175,10 @@ mod tests {
         assert_eq!(EntityKind::Issue.erpnext_doctype(), "Issue");
         assert_eq!(EntityKind::Project.pennylane_path(), PENNYLANE_UNSUPPORTED);
         assert_eq!(EntityKind::Issue.pennylane_path(), PENNYLANE_UNSUPPORTED);
+        assert_eq!(EntityKind::Item.erpnext_doctype(), "Item");
+        assert_eq!(EntityKind::Item.pennylane_path(), "products");
+        assert_eq!(EntityKind::Quotation.erpnext_doctype(), "Quotation");
+        assert_eq!(EntityKind::Quotation.pennylane_path(), "quotes");
     }
 
     #[test]
