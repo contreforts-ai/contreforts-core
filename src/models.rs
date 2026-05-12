@@ -19,6 +19,8 @@ pub enum EntityKind {
     Issue,
     Item,
     Quotation,
+    Meeting,
+    Resolution,
 }
 
 /// Returned by `pennylane_path()` for entity kinds Pennylane does not expose.
@@ -40,6 +42,8 @@ impl EntityKind {
             Self::Issue => "Issue",
             Self::Item => "Item",
             Self::Quotation => "Quotation",
+            Self::Meeting => "Meeting",
+            Self::Resolution => "Resolution",
         }
     }
 
@@ -55,7 +59,7 @@ impl EntityKind {
             Self::Territory => "territories",
             Self::Item => "products",
             Self::Quotation => "quotes",
-            Self::Project | Self::Issue => PENNYLANE_UNSUPPORTED,
+            Self::Project | Self::Issue | Self::Meeting | Self::Resolution => PENNYLANE_UNSUPPORTED,
         }
     }
 
@@ -72,6 +76,8 @@ impl EntityKind {
             Self::Issue => "issue",
             Self::Item => "item",
             Self::Quotation => "quotation",
+            Self::Meeting => "meeting",
+            Self::Resolution => "resolution",
         }
     }
 }
@@ -96,7 +102,9 @@ impl std::str::FromStr for EntityKind {
             "issue" => Ok(Self::Issue),
             "item" => Ok(Self::Item),
             "quotation" => Ok(Self::Quotation),
-            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue|item|quotation)")),
+            "meeting" => Ok(Self::Meeting),
+            "resolution" => Ok(Self::Resolution),
+            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue|item|quotation|meeting|resolution)")),
         }
     }
 }
@@ -145,6 +153,8 @@ mod tests {
             EntityKind::Issue,
             EntityKind::Item,
             EntityKind::Quotation,
+            EntityKind::Meeting,
+            EntityKind::Resolution,
         ] {
             let s = kind.as_str();
             let parsed = EntityKind::from_str(s).expect("parses back");
@@ -157,6 +167,7 @@ mod tests {
         assert_eq!(EntityKind::from_str("Customer").unwrap(), EntityKind::Customer);
         assert_eq!(EntityKind::from_str("INVOICE").unwrap(), EntityKind::Invoice);
         assert_eq!(EntityKind::from_str("customer-group").unwrap(), EntityKind::CustomerGroup);
+        assert_eq!(EntityKind::from_str("Meeting").unwrap(), EntityKind::Meeting);
     }
 
     #[test]
@@ -179,6 +190,8 @@ mod tests {
         assert_eq!(EntityKind::Item.pennylane_path(), "products");
         assert_eq!(EntityKind::Quotation.erpnext_doctype(), "Quotation");
         assert_eq!(EntityKind::Quotation.pennylane_path(), "quotes");
+        assert_eq!(EntityKind::Meeting.erpnext_doctype(), "Meeting");
+        assert_eq!(EntityKind::Meeting.pennylane_path(), PENNYLANE_UNSUPPORTED);
     }
 
     #[test]
