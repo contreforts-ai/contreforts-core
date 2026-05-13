@@ -21,6 +21,8 @@ pub enum EntityKind {
     Quotation,
     Meeting,
     Resolution,
+    Calendar,
+    CalendarEvent,
 }
 
 /// Returned by `pennylane_path()` for entity kinds Pennylane does not expose.
@@ -44,6 +46,8 @@ impl EntityKind {
             Self::Quotation => "Quotation",
             Self::Meeting => "Meeting",
             Self::Resolution => "Resolution",
+            Self::Calendar => "Calendar",
+            Self::CalendarEvent => "Calendar Event",
         }
     }
 
@@ -59,7 +63,8 @@ impl EntityKind {
             Self::Territory => "territories",
             Self::Item => "products",
             Self::Quotation => "quotes",
-            Self::Project | Self::Issue | Self::Meeting | Self::Resolution => PENNYLANE_UNSUPPORTED,
+            Self::Project | Self::Issue | Self::Meeting | Self::Resolution
+            | Self::Calendar | Self::CalendarEvent => PENNYLANE_UNSUPPORTED,
         }
     }
 
@@ -78,6 +83,8 @@ impl EntityKind {
             Self::Quotation => "quotation",
             Self::Meeting => "meeting",
             Self::Resolution => "resolution",
+            Self::Calendar => "calendar",
+            Self::CalendarEvent => "calendar-event",
         }
     }
 }
@@ -104,7 +111,9 @@ impl std::str::FromStr for EntityKind {
             "quotation" => Ok(Self::Quotation),
             "meeting" => Ok(Self::Meeting),
             "resolution" => Ok(Self::Resolution),
-            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue|item|quotation|meeting|resolution)")),
+            "calendar" => Ok(Self::Calendar),
+            "calendar-event" => Ok(Self::CalendarEvent),
+            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue|item|quotation|meeting|resolution|calendar|calendar-event)")),
         }
     }
 }
@@ -155,6 +164,8 @@ mod tests {
             EntityKind::Quotation,
             EntityKind::Meeting,
             EntityKind::Resolution,
+            EntityKind::Calendar,
+            EntityKind::CalendarEvent,
         ] {
             let s = kind.as_str();
             let parsed = EntityKind::from_str(s).expect("parses back");
@@ -168,6 +179,7 @@ mod tests {
         assert_eq!(EntityKind::from_str("INVOICE").unwrap(), EntityKind::Invoice);
         assert_eq!(EntityKind::from_str("customer-group").unwrap(), EntityKind::CustomerGroup);
         assert_eq!(EntityKind::from_str("Meeting").unwrap(), EntityKind::Meeting);
+        assert_eq!(EntityKind::from_str("calendar-event").unwrap(), EntityKind::CalendarEvent);
     }
 
     #[test]
@@ -192,6 +204,9 @@ mod tests {
         assert_eq!(EntityKind::Quotation.pennylane_path(), "quotes");
         assert_eq!(EntityKind::Meeting.erpnext_doctype(), "Meeting");
         assert_eq!(EntityKind::Meeting.pennylane_path(), PENNYLANE_UNSUPPORTED);
+        assert_eq!(EntityKind::Calendar.erpnext_doctype(), "Calendar");
+        assert_eq!(EntityKind::CalendarEvent.erpnext_doctype(), "Calendar Event");
+        assert_eq!(EntityKind::Calendar.pennylane_path(), PENNYLANE_UNSUPPORTED);
     }
 
     #[test]
