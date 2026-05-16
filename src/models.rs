@@ -23,6 +23,7 @@ pub enum EntityKind {
     Resolution,
     Calendar,
     CalendarEvent,
+    Interaction,
 }
 
 /// Returned by `pennylane_path()` for entity kinds Pennylane does not expose.
@@ -48,6 +49,7 @@ impl EntityKind {
             Self::Resolution => "Resolution",
             Self::Calendar => "Calendar",
             Self::CalendarEvent => "Calendar Event",
+            Self::Interaction => "Interaction",
         }
     }
 
@@ -64,7 +66,7 @@ impl EntityKind {
             Self::Item => "products",
             Self::Quotation => "quotes",
             Self::Project | Self::Issue | Self::Meeting | Self::Resolution
-            | Self::Calendar | Self::CalendarEvent => PENNYLANE_UNSUPPORTED,
+            | Self::Calendar | Self::CalendarEvent | Self::Interaction => PENNYLANE_UNSUPPORTED,
         }
     }
 
@@ -85,6 +87,7 @@ impl EntityKind {
             Self::Resolution => "resolution",
             Self::Calendar => "calendar",
             Self::CalendarEvent => "calendar-event",
+            Self::Interaction => "interaction",
         }
     }
 }
@@ -113,7 +116,8 @@ impl std::str::FromStr for EntityKind {
             "resolution" => Ok(Self::Resolution),
             "calendar" => Ok(Self::Calendar),
             "calendar-event" => Ok(Self::CalendarEvent),
-            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue|item|quotation|meeting|resolution|calendar|calendar-event)")),
+            "interaction" => Ok(Self::Interaction),
+            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue|item|quotation|meeting|resolution|calendar|calendar-event|interaction)")),
         }
     }
 }
@@ -166,6 +170,7 @@ mod tests {
             EntityKind::Resolution,
             EntityKind::Calendar,
             EntityKind::CalendarEvent,
+            EntityKind::Interaction,
         ] {
             let s = kind.as_str();
             let parsed = EntityKind::from_str(s).expect("parses back");
