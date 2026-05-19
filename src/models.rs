@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// The kinds of entities that adapters can sync.
@@ -137,6 +137,33 @@ pub struct Document {
     pub modified: Option<NaiveDateTime>,
     /// All fields as a flat JSON object.
     pub fields: serde_json::Value,
+}
+
+/// A unit of authoritative content fetched from a remote system for RAG ingestion.
+///
+/// Distinct from `Document` (which models structured business data) — a `RagDocument`
+/// carries free-form prose (issue body, comment text, doc snippet) tied back to the
+/// originating entity IRI for graph-spread retrieval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RagDocument {
+    /// Fully-qualified graph IRI of the entity this content belongs to.
+    pub entity_iri: String,
+    /// Adapter `source_name()` that produced this content.
+    pub source: String,
+    /// Entity kind (Issue, Customer, …).
+    pub kind: EntityKind,
+    /// Stable identifier for the structural part within the entity
+    /// (e.g. `"body"`, `"comment[42]"`, `"metadata"`).
+    pub structural_path: String,
+    /// Raw text content. Empty strings are allowed (callers may emit a body chunk
+    /// even when the issue body is empty so refresh detection still works).
+    pub text: String,
+    /// Optional canonical URL for citation (e.g. `https://forge/owner/repo/issues/7`).
+    pub url: Option<String>,
+    /// When this content was fetched from the remote system.
+    pub fetched_at: DateTime<Utc>,
+    /// Optional cache validator surfaced by the remote (HTTP ETag, last-modified, etc.).
+    pub etag: Option<String>,
 }
 
 /// Metadata about a sync operation for state tracking.

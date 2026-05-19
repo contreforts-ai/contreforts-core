@@ -17,4 +17,7 @@ pub enum AdapterError {
 
     #[error("Configuration error: {0}")]
     Config(String),
+
+    #[error("Operation not supported by adapter '{adapter}': {operation}")]
+    Unsupported { adapter: String, operation: String },
 }

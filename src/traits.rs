@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 
 use crate::error::AdapterError;
-use crate::models::{Document, EntityKind};
+use crate::models::{Document, EntityKind, RagDocument};
 
 /// Uniform interface implemented by every ERP adapter (ERPNext, Pennylane, …).
 #[async_trait::async_trait]
@@ -32,4 +32,22 @@ pub trait ErpAdapter: Send + Sync {
 
     /// Fetch a single entity by its remote-system ID.
     async fn get(&self, kind: EntityKind, remote_id: &str) -> Result<Document, AdapterError>;
+
+    /// Fetch authoritative free-form content for `entity_iri` from the remote system
+    /// for RAG ingestion (issue body + comments, document text, etc.). Returns one
+    /// `RagDocument` per structural part so the indexer can chunk and embed them
+    /// independently while preserving the entity → graph linkage.
+    ///
+    /// Default impl returns `Unsupported`; adapters opt in by overriding.
+    async fn fetch_content(
+        &self,
+        entity_iri: &str,
+        kind: EntityKind,
+    ) -> Result<Vec<RagDocument>, AdapterError> {
+        let _ = (entity_iri, kind);
+        Err(AdapterError::Unsupported {
+            adapter: self.source_name().to_string(),
+            operation: "fetch_content".to_string(),
+        })
+    }
 }
