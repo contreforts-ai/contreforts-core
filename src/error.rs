@@ -21,3 +21,17 @@ pub enum AdapterError {
     #[error("Operation not supported by adapter '{adapter}': {operation}")]
     Unsupported { adapter: String, operation: String },
 }
+
+#[cfg(feature = "reqwest")]
+impl From<reqwest::Error> for AdapterError {
+    fn from(e: reqwest::Error) -> Self {
+        if e.status()
+            .map(|s| s.as_u16() == 401 || s.as_u16() == 403)
+            .unwrap_or(false)
+        {
+            AdapterError::Auth
+        } else {
+            AdapterError::Http(e.to_string())
+        }
+    }
+}
