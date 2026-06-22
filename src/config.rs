@@ -54,11 +54,10 @@ impl GraphConfig {
 /// Split out from [`GraphConfig::from_env`] so it can be unit-tested without
 /// mutating the process environment.
 fn resolve_store_path(override_var: Option<OsString>) -> String {
-    if let Some(val) = override_var {
-        if !val.is_empty() {
+    if let Some(val) = override_var
+        && !val.is_empty() {
             return val.to_string_lossy().into_owned();
         }
-    }
     GraphConfig::per_user_default().to_string_lossy().into_owned()
 }
 
