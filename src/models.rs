@@ -65,8 +65,13 @@ impl EntityKind {
             Self::Territory => "territories",
             Self::Item => "products",
             Self::Quotation => "quotes",
-            Self::Project | Self::Issue | Self::Meeting | Self::Resolution
-            | Self::Calendar | Self::CalendarEvent | Self::Interaction => PENNYLANE_UNSUPPORTED,
+            Self::Project
+            | Self::Issue
+            | Self::Meeting
+            | Self::Resolution
+            | Self::Calendar
+            | Self::CalendarEvent
+            | Self::Interaction => PENNYLANE_UNSUPPORTED,
         }
     }
 
@@ -117,7 +122,9 @@ impl std::str::FromStr for EntityKind {
             "calendar" => Ok(Self::Calendar),
             "calendar-event" => Ok(Self::CalendarEvent),
             "interaction" => Ok(Self::Interaction),
-            _ => Err(format!("unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue|item|quotation|meeting|resolution|calendar|calendar-event|interaction)")),
+            _ => Err(format!(
+                "unknown entity kind: '{s}' (expected customer|contact|invoice|company|customer-group|territory|project|issue|item|quotation|meeting|resolution|calendar|calendar-event|interaction)"
+            )),
         }
     }
 }
@@ -207,11 +214,26 @@ mod tests {
 
     #[test]
     fn entity_kind_from_str_is_case_insensitive() {
-        assert_eq!(EntityKind::from_str("Customer").unwrap(), EntityKind::Customer);
-        assert_eq!(EntityKind::from_str("INVOICE").unwrap(), EntityKind::Invoice);
-        assert_eq!(EntityKind::from_str("customer-group").unwrap(), EntityKind::CustomerGroup);
-        assert_eq!(EntityKind::from_str("Meeting").unwrap(), EntityKind::Meeting);
-        assert_eq!(EntityKind::from_str("calendar-event").unwrap(), EntityKind::CalendarEvent);
+        assert_eq!(
+            EntityKind::from_str("Customer").unwrap(),
+            EntityKind::Customer
+        );
+        assert_eq!(
+            EntityKind::from_str("INVOICE").unwrap(),
+            EntityKind::Invoice
+        );
+        assert_eq!(
+            EntityKind::from_str("customer-group").unwrap(),
+            EntityKind::CustomerGroup
+        );
+        assert_eq!(
+            EntityKind::from_str("Meeting").unwrap(),
+            EntityKind::Meeting
+        );
+        assert_eq!(
+            EntityKind::from_str("calendar-event").unwrap(),
+            EntityKind::CalendarEvent
+        );
     }
 
     #[test]
@@ -224,8 +246,14 @@ mod tests {
     fn entity_kind_adapter_paths() {
         assert_eq!(EntityKind::Invoice.erpnext_doctype(), "Sales Invoice");
         assert_eq!(EntityKind::Invoice.pennylane_path(), "customer_invoices");
-        assert_eq!(EntityKind::CustomerGroup.erpnext_doctype(), "Customer Group");
-        assert_eq!(EntityKind::CustomerGroup.pennylane_path(), "customer_groups");
+        assert_eq!(
+            EntityKind::CustomerGroup.erpnext_doctype(),
+            "Customer Group"
+        );
+        assert_eq!(
+            EntityKind::CustomerGroup.pennylane_path(),
+            "customer_groups"
+        );
         assert_eq!(EntityKind::Project.erpnext_doctype(), "Project");
         assert_eq!(EntityKind::Issue.erpnext_doctype(), "Issue");
         assert_eq!(EntityKind::Project.pennylane_path(), PENNYLANE_UNSUPPORTED);
@@ -237,7 +265,10 @@ mod tests {
         assert_eq!(EntityKind::Meeting.erpnext_doctype(), "Meeting");
         assert_eq!(EntityKind::Meeting.pennylane_path(), PENNYLANE_UNSUPPORTED);
         assert_eq!(EntityKind::Calendar.erpnext_doctype(), "Calendar");
-        assert_eq!(EntityKind::CalendarEvent.erpnext_doctype(), "Calendar Event");
+        assert_eq!(
+            EntityKind::CalendarEvent.erpnext_doctype(),
+            "Calendar Event"
+        );
         assert_eq!(EntityKind::Calendar.pennylane_path(), PENNYLANE_UNSUPPORTED);
     }
 
