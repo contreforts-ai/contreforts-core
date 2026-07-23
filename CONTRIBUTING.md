@@ -1,12 +1,12 @@
 # Contributing
 
 This crate is a **submodule** of [`dslabs/erp-sync`](https://labs.deepthought-solutions.net/dslabs/erp-sync).
-It was extracted from `crates/erp-core` with `git subtree split`, so its history is
+It was extracted from `crates/contreforts-core` with `git subtree split`, so its history is
 the real history of that directory.
 
 It is **not independently buildable**: the manifest inherits `version`, `edition`
 and its dependency versions from the parent workspace
-(`version.workspace = true`, `erp-core = { workspace = true }`). Build and test it
+(`version.workspace = true`, `contreforts-core = { workspace = true }`). Build and test it
 from a checkout of the superproject, not from a standalone clone.
 
 ---
@@ -88,26 +88,26 @@ of the implementation, making `git bisect` meaningful.
 
 ## 4. Working on this crate from the superproject
 
-The submodule is a full clone — edit in place under `crates/erp-core/`, but mind
+The submodule is a full clone — edit in place under `crates/contreforts-core/`, but mind
 that a fresh submodule checkout is in **detached HEAD**.
 
 ```bash
 # 1. Get on a branch (never commit detached)
-cd crates/erp-core
+cd crates/contreforts-core
 git checkout develop && git pull
 
 # 2. Work
 git checkout -b <author>/<kind>/<slug>
-#    …edit, test from the superproject root: cargo test -p erp-core
+#    …edit, test from the superproject root: cargo test -p contreforts-core
 git commit -m "feat: …"
 git push -u origin HEAD
 #    open a PR against develop, get it merged
 
 # 3. Record the new commit in the superproject
 cd ../..
-git submodule update --remote crates/erp-core
-git add crates/erp-core
-git commit -m "chore(deps): bump erp-core to <short-sha>"
+git submodule update --remote crates/contreforts-core
+git add crates/contreforts-core
+git commit -m "chore(deps): bump contreforts-core to <short-sha>"
 ```
 
 Step 3 is not optional: the superproject pins an exact commit, so an unbumped
@@ -115,9 +115,9 @@ pointer means the merged work is invisible to everyone cloning erp-sync.
 
 ### Changes spanning several crates
 
-A change touching `erp-core` and its consumers is **N+1 pull requests** —
+A change touching `contreforts-core` and its consumers is **N+1 pull requests** —
 one per affected submodule, then one on the superproject bumping all the
-pointers together. Merge the `erp-core` PR first, then the consumers, then
+pointers together. Merge the `contreforts-core` PR first, then the consumers, then
 bump. The superproject bump commit is the atomic point: before it, nobody sees
 a half-applied change.
 
@@ -132,7 +132,7 @@ This repo and the superproject both have trackers. They are **not** interchangea
 
 **When in doubt, file it in `dslabs/erp-sync`.** That is the tracker everyone watches; moving an issue down into a crate later is cheaper than it sitting here unseen.
 
-Cross-repo work gets a **parent issue in the superproject and one sub-task per affected repo**. Link them with fully-qualified refs — `dslabs/erp-sync#15`, `contreforts/erp-core#1` — because a bare `#N` resolves to whichever repo you are reading. This Forgejo build exposes **no issue-dependencies API**, so ordering between sub-tasks lives in the issue text (`Blocked by:` / step *n* of *m*), not in structured metadata.
+Cross-repo work gets a **parent issue in the superproject and one sub-task per affected repo**. Link them with fully-qualified refs — `dslabs/erp-sync#15`, `contreforts/contreforts-core#1` — because a bare `#N` resolves to whichever repo you are reading. This Forgejo build exposes **no issue-dependencies API**, so ordering between sub-tasks lives in the issue text (`Blocked by:` / step *n* of *m*), not in structured metadata.
 
 Every issue carries exactly one `severity:` and one `kind:` label, from the same 10-label taxonomy as the superproject.
 
@@ -146,7 +146,7 @@ Every issue carries exactly one `severity:` and one `kind:` label, from the same
   ```bash
   cargo fmt --all
   cargo clippy --workspace --all-targets -- -D warnings
-  cargo test -p erp-core
+  cargo test -p contreforts-core
   ```
 
 ## 7. Data Access Policy
