@@ -1,5 +1,5 @@
 [package]
-name = "erp-core"
+name = "contreforts-core"
 version.workspace = true
 edition.workspace = true
 
