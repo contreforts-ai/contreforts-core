@@ -36,7 +36,7 @@ pub struct GraphConfig {
 impl GraphConfig {
     /// Resolve the store path following the documented precedence
     /// (`GRAPH_STORE_PATH` override → per-user OS data dir → `./graph_store`).
-    pub fn from_env() -> Result<Self, crate::AdapterError> {
+    pub fn from_env() -> Result<Self, crate::ConnectorError> {
         Ok(Self {
             graph_store_path: resolve_store_path(std::env::var_os("GRAPH_STORE_PATH")),
         })
