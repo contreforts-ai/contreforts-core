@@ -1,11 +1,11 @@
 use chrono::NaiveDateTime;
 
-use crate::error::AdapterError;
+use crate::error::ConnectorError;
 use crate::models::{Document, EntityKind, RagDocument};
 
-/// Uniform interface implemented by every ERP adapter (ERPNext, Pennylane, …).
+/// Uniform interface implemented by every connector (ERPNext, Pennylane, …).
 #[async_trait::async_trait]
-pub trait ErpAdapter: Send + Sync {
+pub trait ContrefortsConnector: Send + Sync {
     /// Unique lowercase name identifying this adapter ("erpnext", "pennylane", …).
     fn source_name(&self) -> &str;
 
@@ -14,24 +14,24 @@ pub trait ErpAdapter: Send + Sync {
         &self,
         kind: EntityKind,
         since: Option<NaiveDateTime>,
-    ) -> Result<Vec<Document>, AdapterError>;
+    ) -> Result<Vec<Document>, ConnectorError>;
 
     /// Push a new entity to the remote system.
     /// Returns the created `Document` with `remote_id` populated.
-    async fn push(&self, doc: &Document) -> Result<Document, AdapterError>;
+    async fn push(&self, doc: &Document) -> Result<Document, ConnectorError>;
 
     /// Update an existing entity in the remote system using `doc.remote_id` as the key.
     /// Returns the updated `Document`. Adapters that do not support updates should return
-    /// `AdapterError::Api { message: "update not supported".into() }`.
-    async fn update(&self, doc: &Document) -> Result<Document, AdapterError> {
+    /// `ConnectorError::Api { message: "update not supported".into() }`.
+    async fn update(&self, doc: &Document) -> Result<Document, ConnectorError> {
         let _ = doc;
-        Err(AdapterError::Api {
+        Err(ConnectorError::Api {
             message: format!("update not supported by adapter '{}'", self.source_name()),
         })
     }
 
     /// Fetch a single entity by its remote-system ID.
-    async fn get(&self, kind: EntityKind, remote_id: &str) -> Result<Document, AdapterError>;
+    async fn get(&self, kind: EntityKind, remote_id: &str) -> Result<Document, ConnectorError>;
 
     /// Fetch authoritative free-form content for `entity_iri` from the remote system
     /// for RAG ingestion (issue body + comments, document text, etc.). Returns one
@@ -43,10 +43,10 @@ pub trait ErpAdapter: Send + Sync {
         &self,
         entity_iri: &str,
         kind: EntityKind,
-    ) -> Result<Vec<RagDocument>, AdapterError> {
+    ) -> Result<Vec<RagDocument>, ConnectorError> {
         let _ = (entity_iri, kind);
-        Err(AdapterError::Unsupported {
-            adapter: self.source_name().to_string(),
+        Err(ConnectorError::Unsupported {
+            connector: self.source_name().to_string(),
             operation: "fetch_content".to_string(),
         })
     }

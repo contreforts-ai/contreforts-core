@@ -1,5 +1,5 @@
 #[derive(Debug, thiserror::Error)]
-pub enum AdapterError {
+pub enum ConnectorError {
     #[error("HTTP error: {0}")]
     Http(String),
 
@@ -18,20 +18,23 @@ pub enum AdapterError {
     #[error("Configuration error: {0}")]
     Config(String),
 
-    #[error("Operation not supported by adapter '{adapter}': {operation}")]
-    Unsupported { adapter: String, operation: String },
+    #[error("Operation not supported by connector '{connector}': {operation}")]
+    Unsupported {
+        connector: String,
+        operation: String,
+    },
 }
 
 #[cfg(feature = "reqwest")]
-impl From<reqwest::Error> for AdapterError {
+impl From<reqwest::Error> for ConnectorError {
     fn from(e: reqwest::Error) -> Self {
         if e.status()
             .map(|s| s.as_u16() == 401 || s.as_u16() == 403)
             .unwrap_or(false)
         {
-            AdapterError::Auth
+            ConnectorError::Auth
         } else {
-            AdapterError::Http(e.to_string())
+            ConnectorError::Http(e.to_string())
         }
     }
 }
