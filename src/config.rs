@@ -8,7 +8,7 @@ use std::path::PathBuf;
 /// # Per-user store layout
 ///
 /// A single Oxigraph store holds **both** graphs for one user:
-/// - the **configuration graph** (`erpd:graph/config` — companies, connectors,
+/// - the **configuration graph** (`cfdata:graph/config` — companies, connectors,
 ///   the `me` profile), and
 /// - the **business / knowledge data** (per-company named graphs + default graph).
 ///
