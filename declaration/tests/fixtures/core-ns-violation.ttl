@@ -1,0 +1,27 @@
+# The synthetic-minimal-declaration fixture, plus one illegitimate subject
+# minted under the shared core: namespace that is NOT a SKOS alignment
+# stub -- i.e. not `a skos:Concept` or `a skos:ConceptScheme`. Used to prove
+# the D2 lint (src/lint/core_ns.rs) rejects this while leaving a
+# legitimate alignment stub (see the two real fixtures) alone.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix synth:        <https://contreforts.ds-labs.org/ontologies/synthetic-test#> .
+@prefix core:         <https://contreforts.ds-labs.org/ontologies/core#> .
+
+# Not an alignment stub: a plain rdfs:Class minted directly under core:,
+# the exact leak D2 exists to catch.
+core:NotAnAlignmentStub a rdfs:Class ;
+    rdfs:label "should be rejected" .
+
+synth:SyntheticConnectorShape a sh:NodeShape ;
+    sh:targetClass synth:SyntheticConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path synth:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .

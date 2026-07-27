@@ -1,0 +1,164 @@
+########################################################################
+# contreforts-declaration meta-shapes
+#
+# Part 2 of contreforts/contreforts-core#14. SHACL shapes that a connector
+# declaration's *own* graph must satisfy, when that graph is loaded as DATA
+# and validated against these shapes.
+#
+# Every rule here was checked against the two real declarations before
+# being written down (contreforts-connector-forgejo's declaration.ttl,
+# 103 triples; the O365 spike, 186 triples) -- not assumed from the issue's
+# wording. One candidate from the issue text did NOT survive that check and
+# was narrowed; see the comment on rule D14-META-4 below for what and why.
+#
+# What is deliberately NOT constrained here, and why:
+#   - No sh:closed anywhere. A meta-shape that forbids predicates it
+#     doesn't already know about would reject the third connector's
+#     legitimate vocabulary for no reason -- exactly the failure mode the
+#     issue warns against.
+#   - No shape asserting sh:xone must have >= 2 alternatives, or that
+#     alternative node shapes are well-formed beyond having paths (rule
+#     META-3 already covers that generically). The cross-exclusion
+#     structure itself is D14's job (lint::xone), not a SHACL shape --
+#     SHACL cannot express a constraint on its own alternatives' mutual
+#     exclusion (see contreforts-workspace#27 and the D14 lint).
+#   - No constraint on contreforts:uiShape's value (e.g. an sh:in of known
+#     component names). The component registry is not this crate's
+#     concern, and enumerating it here would make every new UI component
+#     a meta-shapes change.
+#   - Nothing here enforces the core:-namespace alignment-stub rule (D2).
+#     That check is graph-wide ("is this subject, wherever it appears,
+#     something other than a SKOS alignment stub") rather than a per-node
+#     SHACL constraint, and shacl-rust 0.2.9's SPARQL-based targeting is
+#     exactly the kind of advanced-feature surface #21 flagged as
+#     maturity risk. It is implemented as a Rust structural lint
+#     (lint::core_ns) instead, for the same reason D14 is: reliability and
+#     a message a connector author can act on without reading this file.
+#     See the report on #14 for the exact carve-out chosen.
+#   - Nothing here enforces "at least one sh:NodeShape carries
+#     sh:targetClass" (the issue's first candidate). That is an
+#     existential over the whole graph -- SHACL constraints are universal
+#     over a resolved target set, so an *absence* of any matching node
+#     resolves to zero focus nodes and vacuously conforms, not a
+#     violation. Implemented as a Rust structural lint (lint::structural)
+#     instead, for the same reason.
+########################################################################
+
+@prefix rdfs:        <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:          <http://www.w3.org/ns/shacl#> .
+@prefix xsd:         <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts: <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix meta:        <https://contreforts.ds-labs.org/ontologies/declaration-meta#> .
+
+########################################################################
+# META-1 -- the connector's own node shape (the one carrying
+# sh:targetClass) carries exactly one contreforts:category.
+#
+# Confirmed on both real files: forgejo:ForgejoConnectorShape and
+# o365:O365ConnectorShape are each the sole sh:targetClass-bearing node
+# shape in their file, and each carries exactly one contreforts:category
+# ("git-forge", "calendar"). Neither the sh:xone alternatives
+# (o365:ClientCredentialsShape, o365:DelegatedShape) nor nested shapes
+# (forgejo:GroupMappingShape) carry sh:targetClass, so this rule does not
+# reach them -- it targets only the shape(s) meta-shape META-META-1
+# (the Rust structural lint) already requires to exist.
+########################################################################
+
+meta:TargetClassShapeHasCategory a sh:NodeShape ;
+    rdfs:comment "A connector's targeted node shape must carry exactly one contreforts:category." ;
+    sh:targetSubjectsOf sh:targetClass ;
+    sh:property [
+        sh:path contreforts:category ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "A node shape with sh:targetClass must carry exactly one contreforts:category (catalog grouping for the connector picker)." ;
+    ] .
+
+########################################################################
+# META-2 -- contreforts:secret, wherever used, is a single boolean.
+#
+# Confirmed on both files: o365:clientSecret/token/refreshToken and
+# forgejo:token all carry `contreforts:secret true` as a single boolean
+# literal.
+########################################################################
+
+meta:SecretIsBoolean a sh:NodeShape ;
+    rdfs:comment "contreforts:secret, wherever it is used, must be a single xsd:boolean." ;
+    sh:targetSubjectsOf contreforts:secret ;
+    sh:property [
+        sh:path contreforts:secret ;
+        sh:datatype xsd:boolean ;
+        sh:maxCount 1 ;
+        sh:message "contreforts:secret must be a single xsd:boolean value." ;
+    ] .
+
+########################################################################
+# META-3 -- every value of sh:property has a sh:path.
+#
+# Confirmed graph-wide on both files: every blank node reached via
+# sh:property -- top-level connector fields, sh:xone alternatives' own
+# property shapes, and forgejo:GroupMappingShape's nested fields alike --
+# declares sh:path. This one genuinely holds everywhere, unlike META-4
+# below, because it is a SHACL well-formedness minimum (a property shape
+# without a path cannot resolve any value nodes at all) rather than
+# presentation metadata that only some property shapes carry.
+########################################################################
+
+meta:PropertyShapeHasPath a sh:NodeShape ;
+    rdfs:comment "Every node reached via sh:property must declare sh:path." ;
+    sh:targetObjectsOf sh:property ;
+    sh:property [
+        sh:path sh:path ;
+        sh:minCount 1 ;
+        sh:message "A property shape (reached via sh:property) must declare sh:path -- the UI and the D14 lint both need it to know which predicate this field is." ;
+    ] .
+
+########################################################################
+# META-4 -- a connector's TOP-LEVEL property shapes carry sh:name, unless
+# they are a pure D14 cross-exclusion stub (sh:maxCount 0).
+#
+# NARROWED FROM THE ISSUE'S WORDING. The issue's candidate reads "every
+# non-exclusion property shape carries sh:name". Checked literally against
+# the hardened O365 declaration, that is FALSE: o365:ClientCredentialsShape
+# and o365:DelegatedShape each restate their variant's positive fields
+# (authMode, tenantId, clientId, clientSecret / authMode, token,
+# refreshToken) purely for sh:xone's cardinality check, and NONE of those
+# inner restatements carry sh:name -- the presentation metadata
+# (sh:name/sh:description/sh:order/sh:group) lives only on the outer, flat
+# property shapes on o365:O365ConnectorShape itself. A meta-shape enforcing
+# the issue's literal wording would reject the hardened declaration that
+# the issue itself says must pass. This is reported as a finding on #14,
+# not papered over.
+#
+# The rule actually implemented: sh:name is required on a property shape
+# only when it is a DIRECT sh:property child of a node shape that itself
+# carries sh:targetClass (i.e. the top-level, renderable field list) --
+# and even then, not when that property shape is a pure exclusion stub.
+# sh:xone alternatives are reached via sh:xone, not sh:property, from the
+# targeted shape, so this rule does not walk into them at all; it never
+# sees their unnamed, restated property shapes in the first place.
+########################################################################
+
+meta:TopLevelPropertyHasNameUnlessExclusion a sh:NodeShape ;
+    rdfs:comment "A connector's own top-level property shapes carry sh:name, unless they are a bare D14 sh:maxCount-0 exclusion stub." ;
+    sh:targetSubjectsOf sh:targetClass ;
+    sh:property [
+        sh:path sh:property ;
+        sh:node [
+            sh:or (
+                [
+                    sh:property [
+                        sh:path sh:maxCount ;
+                        sh:hasValue 0 ;
+                    ]
+                ]
+                [
+                    sh:property [
+                        sh:path sh:name ;
+                        sh:minCount 1 ;
+                    ]
+                ]
+            ) ;
+        ] ;
+        sh:message "A top-level property shape must carry sh:name (the UI has nothing to render without it), unless it is a bare sh:maxCount 0 exclusion stub." ;
+    ] .

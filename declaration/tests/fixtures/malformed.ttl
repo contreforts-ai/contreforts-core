@@ -1,0 +1,12 @@
+# Deliberately broken Turtle: an unterminated string literal and a
+# dangling predicate with no object, no trailing '.'. Used to prove
+# validate() reports a legible error instead of a panic surfacing from
+# inside oxigraph/shacl-rust.
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+<https://contreforts.ds-labs.org/ontologies/broken#Shape> a sh:NodeShape ;
+    sh:targetClass <https://contreforts.ds-labs.org/ontologies/broken#Thing> ;
+    sh:property [
+        sh:path <https://contreforts.ds-labs.org/ontologies/broken#label> ;
+        sh:name "unterminated string literal
+    ] .
