@@ -1,0 +1,61 @@
+########################################################################
+# contreforts-declaration vocabulary
+#
+# Part 1 of contreforts/contreforts-core#14. Three terms, no more: the two
+# real declarations this crate was built against (contreforts-connector-
+# forgejo's declaration.ttl, contreforts-workspace#23; the O365 spike,
+# contreforts-workspace#27) needed exactly these three between them, and
+# nothing else. Resist inventing a fourth without a declaration that
+# actually needs it.
+########################################################################
+
+@prefix rdf:         <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:        <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:         <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:          <http://www.w3.org/ns/shacl#> .
+@prefix contreforts: <https://contreforts.ds-labs.org/ontologies/declaration#> .
+
+contreforts:secret a rdf:Property ;
+    rdfs:label "secret" ;
+    rdfs:comment """Marks a property shape's value as write-only (D8). The
+config API must never serve this value back; a generated form renders an
+empty box meaning "unchanged", and submitting it empty is a no-op, not a
+clear. Boolean, defaults to false when absent.""" ;
+    rdfs:domain sh:PropertyShape ;
+    rdfs:range xsd:boolean .
+
+contreforts:category a rdf:Property ;
+    rdfs:label "connector catalog category" ;
+    rdfs:comment """Groups connector *types* (not fields) into the UI's
+add-connector catalog, e.g. "git-forge" or "calendar". Orthogonal to
+sh:group, which groups fields *within* one shape's own form -- category is
+a catalog-level axis over connectors, sh:group is a form-level axis over
+one connector's fields.""" ;
+    rdfs:domain sh:NodeShape ;
+    rdfs:range xsd:string .
+
+contreforts:uiShape a rdf:Property ;
+    rdfs:label "UI shape" ;
+    rdfs:comment """Names the registered UI component (D9) that should
+render this shape when it is not a plain scalar form field -- e.g.
+"mapping-table" for a repeatable nested structure, or
+"discriminated-union" on a node shape whose fields come from an sh:xone
+tagged union. This is a component-registry key, never a connector
+identifier (D9's mechanical requirement): components register by shape,
+not by which connector happens to use them.
+
+Applies to sh:PropertyShape *or* sh:NodeShape -- deliberately not
+restricted to one. contreforts-workspace#23's Forgejo spike only needed it
+on a property shape (groupMapping is one property whose value is a nested
+structure). contreforts-workspace#27's O365 spike needed it on the node
+shape itself: O365's auth union is not one property with a nested object
+value -- tenantId/clientId/clientSecret/token/refreshToken sit as flat
+predicates directly on the connector node, so there is no single property
+shape to hang "render this as a discriminated union" off. The annotation
+has to sit on the sh:NodeShape that owns the sh:xone instead.
+
+This dual domain is recorded here in prose, not as a machine-checked
+owl:unionOf on rdfs:domain: rdfs:domain was never enforced by any consumer
+of this vocabulary, and a real union domain needs OWL for one axiom that
+nothing reads. Not worth it.""" ;
+    rdfs:range xsd:string .

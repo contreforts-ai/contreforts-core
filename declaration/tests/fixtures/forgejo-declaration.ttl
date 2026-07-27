@@ -1,0 +1,275 @@
+########################################################################
+# contreforts-connector-forgejo — hand-authored self-description
+#
+# Spike for contreforts/contreforts-workspace#23, testing D6
+# (contreforts/contreforts-workspace#19): "SHACL Core carries everything
+# a generated config form needs except a secret flag."
+#
+# Sources read (not invented — see the report posted alongside this file):
+#   - crates/contreforts-kg/src/config_graph.rs:61   ForgejoConnectorConfig
+#   - crates/contreforts-kg/src/config_graph.rs:547-708, 2177-2280
+#         set_forgejo_connector / get_forgejo_connector / list_forgejo_connectors
+#         set_group_customer_mapping / get_customer_for_group / list_group_mappings
+#   - crates/contreforts-kg/src/namespaces.rs:63-70   forgejo_connector_iri
+#   - crates/contreforts-connector-forgejo/src/connector.rs:62-77   match kind
+#   - crates/contreforts-connector-forgejo/src/config.rs             ForgejoConfig
+#   - contreforts-config-webui/src/lib/api/config-api.js:399ff       apiCompanyToForm
+#   - contreforts-config-webui/src/lib/organisms/ConfigForm.svelte:412-498
+#   - contreforts-config-webui/src/lib/organisms/GroupMappingList.svelte
+#   - contreforts-config-webui/src/lib/validation.js:73-84
+#
+# IMPORTANT CAVEAT, stated once here rather than on every section: this file
+# declares what contreforts-connector-forgejo *would* self-describe under
+# the D1/D2/D6 design. It does NOT match what config_graph.rs writes today.
+# Today's code mints the connector's class and every one of its field
+# predicates under CORE_NS (`core:ForgejoConnector`, `core:instanceUrl`,
+# `core:label`, `core:token`) — shared with nine other connectors. That is
+# the exact leak contreforts/contreforts-workspace#19 exists to fix. This
+# declaration puts the class and its fields in forgejo's own namespace, per
+# D2. See the report, "what the Rust code does that no declaration captures".
+########################################################################
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+
+# Core's shared concept scheme, per D2. contreforts-core#11 has not landed —
+# these three concepts are reproduced here, minimally, only as alignment
+# targets so this file is reviewable standalone. A real connector crate would
+# not define these; it would import core's scheme.
+@prefix core:   <https://contreforts.ds-labs.org/ontologies/core#> .
+
+# This connector's own namespace (D2: "extension terms live in the
+# extension's own namespace"). Modelled on CORE_NS's shape
+# (".../ontologies/<name>#") per scripts/check-namespace-consistency.py's
+# documented shape convention.
+@prefix forgejo: <https://contreforts.ds-labs.org/ontologies/forgejo#> .
+
+# Terms invented for this spike because SHACL Core and SKOS had nothing to
+# offer. Every term under this prefix is a finding — see the report.
+@prefix contreforts: <https://contreforts.ds-labs.org/ontologies/declaration#> .
+
+
+########################################################################
+# 0. Assumed core concept scheme (NOT part of this connector's declaration;
+#    reproduced only so skos:closeMatch/exactMatch below have a target)
+########################################################################
+
+core:CoreConcepts a skos:ConceptScheme ;
+    rdfs:label "Contreforts core concepts" .
+
+core:Customer a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Customer"@en .
+
+core:Project a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Project"@en .
+
+core:Issue a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Issue"@en .
+
+
+########################################################################
+# 1. Invented vocabulary
+#
+# D6 predicted exactly one invented term (the secret flag). This spike
+# needed THREE. Read as a direct finding against D6, not a footnote:
+#   - contreforts:secret    — predicted.
+#   - contreforts:uiShape   — not predicted. Required by D9 ("components
+#     register by shape, never by connector name"): SHACL Core has
+#     sh:node/sh:property to describe a nested structure's *data* shape,
+#     but no term for "which named UI widget renders this". Without this
+#     predicate a generated-form reader has no way to know that the
+#     group-mapping field needs the mapping-table component (with its
+#     inheritance-probe affordance, see GroupMappingList.svelte) rather
+#     than a generic repeatable sub-form.
+#   - contreforts:category  — not predicted. Distinct from sh:group: sh:group
+#     groups *fields within one shape*. It has nothing to say about how the
+#     UI's connector picker groups *connector types* into a catalog
+#     (config-api.js / ConfigForm.svelte group forgejo+gitlab under one
+#     "git forges" add-connector menu; ConnectorConfig::category() in
+#     config_graph.rs:338 returns "git-forge" for exactly this purpose).
+#     This is genuine catalog/navigation metadata about the shape itself,
+#     one level up from anything SHACL Core models.
+########################################################################
+
+contreforts:secret a rdf:Property ;
+    rdfs:label "secret" ;
+    rdfs:comment """Marks a property shape's value as write-only (D8). The
+config API must never serve this value back; a generated form renders an
+empty box meaning "unchanged", and submitting it empty is a no-op, not a
+clear. Boolean, defaults to false when absent.""" ;
+    rdfs:domain sh:PropertyShape ;
+    rdfs:range xsd:boolean .
+
+contreforts:uiShape a rdf:Property ;
+    rdfs:label "UI shape" ;
+    rdfs:comment """Names the registered UI component (D9) that should
+render this property when it is not a plain scalar — e.g. "mapping-table".
+This is a component-registry key, never a connector identifier (D9's
+mechanical requirement). A generic form generator handles a bare
+sh:node/sh:property nesting fine for structure; this predicate exists only
+because two different nested shapes may need genuinely different
+interaction, which structure alone does not distinguish.""" ;
+    rdfs:domain sh:PropertyShape ;
+    rdfs:range xsd:string .
+
+contreforts:category a rdf:Property ;
+    rdfs:label "connector catalog category" ;
+    rdfs:comment """Groups connector *types* (not fields) into the UI's
+add-connector catalog, e.g. "git-forge". Orthogonal to sh:group, which
+groups fields within a single shape's own form.""" ;
+    rdfs:domain sh:NodeShape ;
+    rdfs:range xsd:string .
+
+
+########################################################################
+# 2. Entity vocabulary
+#
+# connector.rs:62-77's match block, verbatim:
+#   EntityKind::Customer -> Organization  (remote_id = org username)
+#   EntityKind::Project   -> Repository    (remote_id = "owner/repo")
+#   EntityKind::Issue     -> Issue         (remote_id = "owner/repo#index")
+########################################################################
+
+forgejo:Organization a rdfs:Class ;
+    rdfs:label "Forgejo organization" ;
+    rdfs:comment """A Forgejo/Gitea organization: the unit repositories are
+grouped under. Pulled via GET /orgs (client.list_orgs); remote_id = name =
+the org's username. Produces EntityKind::Customer documents
+(connector.rs:63-69, org_to_doc).""" ;
+    # Lossy on purpose (per the issue): an Organization is a git-hosting
+    # grouping construct with fields like visibility/avatar_url that have
+    # no analogue on core:Customer, and core:Customer (via ERPNext) carries
+    # billing/territory/contact semantics an org has no notion of at all.
+    # closeMatch, not exactMatch — see report Q4.
+    skos:closeMatch core:Customer .
+
+forgejo:Repository a rdfs:Class ;
+    rdfs:label "Forgejo repository" ;
+    rdfs:comment """A git repository. Pulled via list_all_repos; remote_id =
+name = "owner/repo" (full_name). Produces EntityKind::Project documents
+(connector.rs:70-76, repo_to_doc).""" ;
+    # Judgement call, not the obvious case (see report Q4): a repository
+    # has no budget, no customer, no timeline/milestone-as-a-whole — the
+    # things core:Project means in the ERPNext sense it was named after.
+    # closeMatch rather than exactMatch despite the tidy 1:1 label mapping.
+    skos:closeMatch core:Project .
+
+forgejo:Issue a rdfs:Class ;
+    rdfs:label "Forgejo issue" ;
+    rdfs:comment """A git issue. Pulled via list_all_issues; remote_id =
+"owner/repo#index". Produces EntityKind::Issue documents
+(connector.rs:77-88, issue_to_doc), enriched with dependencies/blocks/
+references (enrich_issue_links, connector.rs:426-480) — cross-issue links
+that have no vocabulary anywhere in this declaration; see report Q6.""" ;
+    # The "easy" case per the issue text — labels match exactly, and both
+    # represent "one reported unit of work with a title/state/assignees".
+    # Marked exactMatch, but see report Q4: this is a closer call than it
+    # looks, since an ERPNext-flavoured core:Issue plausibly carries
+    # customer/SLA/priority fields a Forgejo issue has no equivalent of.
+    skos:exactMatch core:Issue .
+
+
+########################################################################
+# 3. Configuration schema
+#
+# ForgejoConnectorConfig (config_graph.rs:59-68) has exactly three fields:
+# label, url, token. That's it — this is a genuinely small connector.
+########################################################################
+
+forgejo:ConnectionGroup a sh:PropertyGroup ;
+    rdfs:label "Connection" ;
+    sh:order 1 .
+
+forgejo:ForgejoConnectorShape a sh:NodeShape ;
+    sh:targetClass forgejo:ForgejoConnector ;
+    contreforts:category "git-forge" ;   # config_graph.rs:342, category()
+
+    sh:property [
+        sh:path forgejo:label ;
+        sh:name "Label" ;
+        sh:description "Short identifier for this instance (e.g. \"main\", \"staging\"). Allows multiple Forgejo connectors per company." ;
+        # ConfigForm.svelte:432-438, verbatim wording.
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 1 ;
+        sh:order 1 ;
+        sh:group forgejo:ConnectionGroup ;
+    ] ;
+
+    sh:property [
+        sh:path forgejo:instanceUrl ;
+        sh:name "URL" ;
+        sh:description "Base URL of the Forgejo instance (e.g. https://git.example.com)." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        # Coarse approximation of validation.js's isValidHttpUrl(), which
+        # actually parses with `new URL()` — a regex is strictly weaker;
+        # see report Q1.
+        sh:pattern "^https?://[^\\s]+$" ;
+        sh:order 2 ;
+        sh:group forgejo:ConnectionGroup ;
+    ] ;
+
+    sh:property [
+        sh:path forgejo:token ;
+        sh:name "API token" ;
+        sh:description "Personal access token, sent as Authorization: token <token>. Create one in Forgejo under Settings -> Applications -> Generate New Token." ;
+        # ConfigForm.svelte:473-487, condensed.
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        # Required on *create* (validation.js:82-84). D8 makes an empty
+        # value on *update* a valid, meaningful no-op — a case sh:minCount
+        # cannot express, because SHACL validates one snapshot and has no
+        # concept of create-vs-update context. See report Q1/Q6.
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 3 ;
+        sh:group forgejo:ConnectionGroup ;
+        contreforts:secret true ;
+    ] ;
+
+    sh:property [
+        sh:path forgejo:groupMapping ;
+        sh:name "Group -> customer mapping" ;
+        sh:description "Maps a Forgejo org/group path to the customer it belongs to. Child paths inherit from the nearest mapped ancestor (e.g. a mapping on \"acme-org\" also covers \"acme-org/backend/api\")." ;
+        # GroupMappingList.svelte:2-6, condensed.
+        sh:node forgejo:GroupMappingShape ;
+        sh:minCount 0 ;
+        # No sh:maxCount: an unbounded repeatable list, per
+        # list_group_mappings (config_graph.rs:2253-2280).
+        sh:order 4 ;
+        sh:group forgejo:ConnectionGroup ;
+        contreforts:uiShape "mapping-table" ;
+    ] .
+
+forgejo:GroupMappingShape a sh:NodeShape ;
+    sh:property [
+        sh:path forgejo:groupPath ;
+        sh:name "Group path" ;
+        sh:description "e.g. acme-org or acme-org/backend" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        sh:path forgejo:mapsToCustomer ;
+        sh:name "Customer slug" ;
+        sh:description "Slug of the customer this group belongs to." ;
+        # config_graph.rs stores this as a bare xsd:string, not an IRI
+        # reference to the customer entity it names — see report Q6.
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 2 ;
+    ] .

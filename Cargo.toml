@@ -2,6 +2,10 @@
 name = "contreforts-core"
 version.workspace = true
 edition.workspace = true
+# contreforts-declaration (contreforts/contreforts-core#14) is nested here
+# provisionally but is a wholly separate crate -- see its own README.md.
+# Exclude it so it is never mistaken for part of this crate's own manifest.
+exclude = ["declaration"]
 
 [dependencies]
 async-trait = { workspace = true }

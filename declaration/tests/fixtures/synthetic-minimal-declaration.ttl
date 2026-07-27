@@ -1,0 +1,47 @@
+# SYNTHETIC, not a real connector. Exercises sh:group/sh:order/sh:defaultValue
+# (contreforts-workspace#21: not exposed by the typed Shape API, read back
+# via SPARQL -- see src/model.rs) and contreforts:secret, on a minimal
+# declaration that otherwise satisfies every meta-shape on its own. Mirrors
+# the isolated-mechanism-test approach contreforts-workspace#27's O365 spike
+# used for the same reason: neither real declaration has a numeric or
+# defaulted field.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix synth:        <https://contreforts.ds-labs.org/ontologies/synthetic-test#> .
+
+synth:ConnectionGroup a sh:PropertyGroup .
+
+synth:SyntheticConnectorShape a sh:NodeShape ;
+    sh:targetClass synth:SyntheticConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path synth:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 1 ;
+        sh:group synth:ConnectionGroup ;
+    ] ;
+    sh:property [
+        sh:path synth:pollIntervalSecs ;
+        sh:name "Poll interval (seconds)" ;
+        sh:description "SYNTHETIC test-only field, not part of any real connector struct." ;
+        sh:datatype xsd:integer ;
+        sh:defaultValue 300 ;
+        sh:minInclusive 30 ;
+        sh:maxInclusive 86400 ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+        sh:order 2 ;
+    ] ;
+    sh:property [
+        sh:path synth:token ;
+        sh:name "Token" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 3 ;
+        contreforts:secret true ;
+    ] .

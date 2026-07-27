@@ -1,0 +1,22 @@
+[package]
+name = "contreforts-declaration"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Deepthought Solutions"]
+# Nested provisionally inside contreforts-core -- see README.md and the
+# crate-level doc comment in src/lib.rs. contreforts/contreforts-core#14.
+
+[dependencies]
+# Exact pin, not "0.2": contreforts/contreforts-workspace#21 selected
+# shacl-rust as the only candidate that both compiles and treats
+# oxigraph::model as its native type system, while recording real maturity
+# risk -- 607 downloads, single author, 0.2.0 -> 0.2.9 in five days. An
+# exact pin is the cheap insurance against an untested transitive bump.
+shacl-rust = "=0.2.9"
+# Matches the outer workspace's pin (see the root Cargo.toml). Deliberately
+# NOT `{ workspace = true }`: this crate must depend on nothing about the
+# superproject it happens to be nested in right now (see lib.rs), so its
+# manifest has to stand on its own even outside that workspace.
+oxigraph = "0.5"
+thiserror = "2"

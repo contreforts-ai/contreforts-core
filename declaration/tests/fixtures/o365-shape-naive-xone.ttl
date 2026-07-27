@@ -1,0 +1,32 @@
+# NAIVE version of the auth union: two sh:xone alternatives discriminated
+# by sh:in, each listing ONLY its own variant's required fields -- exactly
+# what the issue's Part 1 instruction reads as ("two alternative node
+# shapes, discriminated by sh:in"), with none of the sh:maxCount 0
+# cross-exclusions the main declaration (o365-declaration.ttl) adds.
+#
+# Used once, to show what happens to the mixed-variant instance WITHOUT
+# the exclusions -- see the validator report's headline finding.
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix o365: <https://contreforts.ds-labs.org/ontologies/o365#> .
+
+o365:O365ConnectorShape a sh:NodeShape ;
+    sh:targetClass o365:O365Connector ;
+    sh:property [ sh:path o365:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:xone (
+        o365:NaiveClientCredentialsShape
+        o365:NaiveDelegatedShape
+    ) .
+
+o365:NaiveClientCredentialsShape a sh:NodeShape ;
+    sh:property [ sh:path o365:authMode ; sh:in ( "client_credentials" ) ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path o365:tenantId ;     sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path o365:clientId ;     sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path o365:clientSecret ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+    # NOTE: no sh:maxCount 0 on token/refreshToken here -- that is the point.
+
+o365:NaiveDelegatedShape a sh:NodeShape ;
+    sh:property [ sh:path o365:authMode ; sh:in ( "delegated" ) ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path o365:token ;        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path o365:refreshToken ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+    # NOTE: no sh:maxCount 0 on tenantId/clientId/clientSecret here either.
