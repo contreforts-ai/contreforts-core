@@ -37,6 +37,12 @@ const CATEGORY_PREDICATE: NamedNodeRef<'static> =
     NamedNodeRef::new_unchecked("https://contreforts.ds-labs.org/ontologies/declaration#category");
 const UI_SHAPE_PREDICATE: NamedNodeRef<'static> =
     NamedNodeRef::new_unchecked("https://contreforts.ds-labs.org/ontologies/declaration#uiShape");
+// The fourth vocabulary.ttl predicate (contreforts-core#16, D15), added
+// the same way as the three above: SHACL has no term for it, so the typed
+// `Shape` API cannot see it either.
+const CONFIG_FIELD_PREDICATE: NamedNodeRef<'static> = NamedNodeRef::new_unchecked(
+    "https://contreforts.ds-labs.org/ontologies/declaration#configField",
+);
 
 /// One `sh:property` value shape, as a connector's `build.rs` or a config
 /// form generator would consume it.
@@ -72,6 +78,15 @@ pub struct PropertyShape {
     /// contreforts-workspace#27's O365 spike, which found the same thing:
     /// O365ConnectorConfig has no defaulted field for real).
     pub default_value: Option<String>,
+    /// `contreforts:configField`'s value (contreforts-core#16, D15):
+    /// names the field of the connector's runtime config struct this
+    /// property supplies. `None` when the property shape carries no
+    /// annotation -- legal, and the common case today: it means this
+    /// property is identity, storage-only, or presentation metadata
+    /// rather than part of the runtime config surface. See the D15 lints
+    /// in `lint::config_field` for the two existential rules this crate
+    /// enforces about it that a meta-shape cannot.
+    pub config_field: Option<String>,
 }
 
 /// A connector's self-description, once it has passed meta-shape
@@ -243,6 +258,7 @@ fn build_property_shape(
 
     let secret = get_boolean_value(graph, shape.node, SECRET_PREDICATE).unwrap_or(false);
     let ui_shape = get_string_value(graph, shape.node, UI_SHAPE_PREDICATE);
+    let config_field = get_string_value(graph, shape.node, CONFIG_FIELD_PREDICATE);
 
     let key = shape.node.to_string();
     let (group, order, default_value) = match presentation.get(&key) {
@@ -262,6 +278,7 @@ fn build_property_shape(
         group,
         order,
         default_value,
+        config_field,
     })
 }
 

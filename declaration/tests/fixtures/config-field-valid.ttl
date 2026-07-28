@@ -1,0 +1,39 @@
+# SYNTHETIC, not a real connector. A clean, fully-annotated declaration
+# for D15 (contreforts-core#16): every field that reaches the connector's
+# runtime config carries contreforts:configField, including a secret one,
+# and `label` -- identity, not configuration, per vocabulary.ttl's own
+# rdfs:comment example -- deliberately carries none. Exercises Part 4:
+# every configField value here must be readable from the Declaration
+# model.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix cftest:       <https://contreforts.ds-labs.org/ontologies/config-field-test#> .
+
+cftest:ConfigFieldValidShape a sh:NodeShape ;
+    sh:targetClass cftest:ConfigFieldValidConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path cftest:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path cftest:apiUrl ;
+        sh:name "API URL" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        contreforts:configField "url" ;
+    ] ;
+    sh:property [
+        sh:path cftest:apiToken ;
+        sh:name "API token" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        contreforts:secret true ;
+        contreforts:configField "token" ;
+    ] .

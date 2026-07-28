@@ -42,6 +42,32 @@
 #     resolves to zero focus nodes and vacuously conforms, not a
 #     violation. Implemented as a Rust structural lint (lint::structural)
 #     instead, for the same reason.
+#   - Nothing here enforces D15's (contreforts-core#16) two
+#     contreforts:configField rules: no two property shapes on one node
+#     shape may share a configField, and a contreforts:secret true
+#     property shape must carry one too. Both are existential over *other*
+#     property shapes on the same node -- exactly the class of constraint
+#     no SHACL shape can express (see D14's own note above). Implemented
+#     as a Rust lint (lint::config_field) instead.
+#
+#     NARROWED FROM THE ISSUE'S WORDING, and reported as a finding, not
+#     papered over: the issue states the secret-requires-configField rule
+#     unconditionally. Checked against the two real declarations below
+#     (as every rule here is, per this file's own header rule), that is
+#     FALSE: forgejo-declaration.ttl's `token` and o365-declaration.ttl's
+#     `clientSecret`/`token`/`refreshToken` all carry
+#     `contreforts:secret true` with no `contreforts:configField` at all
+#     (annotating them is out of scope for #16 -- it is step 2, in each
+#     connector's own repo, after this lands), and the issue's own Tests
+#     section separately requires both real fixtures to still validate
+#     clean. Read literally, those two requirements of the issue directly
+#     contradict each other on the identical fact pattern (secret with no
+#     configField, nowhere in the declaration). lint::config_field's own
+#     doc comment has the full account; the rule actually implemented
+#     fires only on a node shape that already uses contreforts:configField
+#     on at least one of its own fields, which satisfies both real
+#     fixtures (neither uses the term at all) and the issue's synthetic
+#     rejection case.
 ########################################################################
 
 @prefix rdfs:        <http://www.w3.org/2000/01/rdf-schema#> .
@@ -161,4 +187,29 @@ meta:TopLevelPropertyHasNameUnlessExclusion a sh:NodeShape ;
             ) ;
         ] ;
         sh:message "A top-level property shape must carry sh:name (the UI has nothing to render without it), unless it is a bare sh:maxCount 0 exclusion stub." ;
+    ] .
+
+########################################################################
+# META-5 -- contreforts:configField, where present, is a single string.
+#
+# What is expressible about D15 (contreforts-core#16) here is purely
+# universal: *where* contreforts:configField appears, it must be one
+# xsd:string. The two existential D15 rules (no duplicate configField on
+# one node shape; contreforts:secret requires configField) are NOT
+# expressible here -- see the header note above and lint::config_field for
+# why, and for a narrowing/contradiction found in the issue's wording.
+#
+# Neither real declaration (forgejo, o365) uses this term yet -- Part 1,
+# step 1 of 3 -- so today this constrains only the synthetic test
+# fixtures that do.
+########################################################################
+
+meta:ConfigFieldIsString a sh:NodeShape ;
+    rdfs:comment "contreforts:configField, wherever it is used, must be a single xsd:string." ;
+    sh:targetSubjectsOf contreforts:configField ;
+    sh:property [
+        sh:path contreforts:configField ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:message "contreforts:configField must be a single xsd:string value." ;
     ] .

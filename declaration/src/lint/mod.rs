@@ -10,7 +10,14 @@
 //!   - [`structural`] -- existential ("at least one X exists") checks,
 //!     which a universally-quantified SHACL constraint cannot express at
 //!     all.
+//!   - [`config_field`] -- D15 (contreforts/contreforts-core#16): no two
+//!     property shapes on one node shape may share a
+//!     `contreforts:configField`, and (narrowed -- see that module's own
+//!     doc comment for a contradiction found in the issue text) a
+//!     `contreforts:secret true` property shape must carry one too, once
+//!     its node shape uses the term at all.
 
+pub(crate) mod config_field;
 pub(crate) mod core_ns;
 pub(crate) mod structural;
 pub(crate) mod xone;
