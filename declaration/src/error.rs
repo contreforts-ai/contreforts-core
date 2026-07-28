@@ -21,6 +21,13 @@ pub enum Rule {
     /// per-node SHACL constraint (e.g. "at least one sh:NodeShape carries
     /// sh:targetClass").
     Structural,
+    /// The D15 `contreforts:configField` existential lints (Part 3 of
+    /// contreforts/contreforts-core#16): no two property shapes on one
+    /// node shape may share a `configField`, and (narrowed -- see
+    /// `lint::config_field`'s doc comment) a `contreforts:secret true`
+    /// property shape on a node shape that already uses `configField`
+    /// elsewhere must carry one too.
+    D15ConfigField,
 }
 
 impl fmt::Display for Rule {
@@ -31,6 +38,7 @@ impl fmt::Display for Rule {
             Rule::D14Xone => "D14 (sh:xone cross-exclusion)",
             Rule::D2CoreNamespace => "D2 (core: namespace)",
             Rule::Structural => "structural",
+            Rule::D15ConfigField => "D15 (contreforts:configField)",
         };
         write!(f, "{s}")
     }
@@ -77,6 +85,10 @@ impl Violation {
 
     pub fn structural(message: impl Into<String>) -> Self {
         Self::new(Rule::Structural, None, message)
+    }
+
+    pub fn d15_config_field(subject: Option<String>, message: impl Into<String>) -> Self {
+        Self::new(Rule::D15ConfigField, subject, message)
     }
 
     pub fn rule(&self) -> Rule {

@@ -14,6 +14,10 @@ const FORGEJO_DECLARATION: &str = include_str!("fixtures/forgejo-declaration.ttl
 const SYNTHETIC_MINIMAL: &str = include_str!("fixtures/synthetic-minimal-declaration.ttl");
 const MALFORMED: &str = include_str!("fixtures/malformed.ttl");
 const CORE_NS_VIOLATION: &str = include_str!("fixtures/core-ns-violation.ttl");
+const CONFIG_FIELD_CONFLICT: &str = include_str!("fixtures/config-field-conflict.ttl");
+const CONFIG_FIELD_SECRET_WITHOUT_FIELD: &str =
+    include_str!("fixtures/config-field-secret-without-field.ttl");
+const CONFIG_FIELD_VALID: &str = include_str!("fixtures/config-field-valid.ttl");
 
 #[test]
 fn hardened_o365_declaration_validates_clean() {
@@ -249,6 +253,131 @@ fn real_declarations_alignment_stub_carve_out_is_not_rejected() {
             result.err().map(|v| v.to_string()).unwrap_or_default()
         );
     }
+}
+
+#[test]
+fn real_declarations_carry_no_config_field_yet_and_still_validate() {
+    // D15 (contreforts-core#16), Part 5's first requirement: neither real
+    // declaration uses contreforts:configField yet -- absence must be
+    // legal. Already implied by the two `..._validates_clean` tests above
+    // passing at all once the D15 lints are wired into `validate()`, but
+    // asserted directly here (mirroring
+    // `real_declarations_alignment_stub_carve_out_is_not_rejected`'s own
+    // reasoning for D2) so a future change to lint::config_field that
+    // breaks this fails a test whose name says exactly what broke.
+    for (label, ttl) in [("o365", O365_DECLARATION), ("forgejo", FORGEJO_DECLARATION)] {
+        let declaration = validate(ttl).unwrap_or_else(|v| {
+            panic!("{label}'s fixture must still validate clean under the D15 lints: {v}")
+        });
+        assert!(
+            declaration
+                .properties
+                .iter()
+                .all(|p| p.config_field.is_none()),
+            "{label}'s fixture does not use contreforts:configField yet"
+        );
+    }
+}
+
+#[test]
+fn duplicate_config_field_on_same_node_shape_is_rejected_naming_both() {
+    let result = validate(CONFIG_FIELD_CONFLICT);
+    assert!(
+        result.is_err(),
+        "two property shapes naming the same contreforts:configField on one node shape must be rejected"
+    );
+    let violations = result.unwrap_err();
+    let d15: Vec<_> = violations
+        .iter()
+        .filter(|v| v.rule() == Rule::D15ConfigField)
+        .collect();
+    assert_eq!(
+        d15.len(),
+        1,
+        "expected exactly one duplicate-configField violation, got: {violations}"
+    );
+
+    let rendered = violations.to_string();
+    for needle in [
+        "API URL",
+        "Mirror URL",
+        "\"url\"",
+        "ConfigFieldConflictShape",
+    ] {
+        assert!(
+            rendered.contains(needle),
+            "rejection message must name the node shape and both offending properties; \
+             missing {needle:?} in:\n{rendered}"
+        );
+    }
+
+    println!("duplicate-configField rejection message:\n{rendered}");
+}
+
+#[test]
+fn secret_without_config_field_is_rejected_once_the_node_shape_opts_in() {
+    let result = validate(CONFIG_FIELD_SECRET_WITHOUT_FIELD);
+    assert!(
+        result.is_err(),
+        "contreforts:secret true without contreforts:configField must be rejected once the \
+         node shape already uses contreforts:configField elsewhere"
+    );
+    let violations = result.unwrap_err();
+    let d15: Vec<_> = violations
+        .iter()
+        .filter(|v| v.rule() == Rule::D15ConfigField)
+        .collect();
+    assert_eq!(
+        d15.len(),
+        1,
+        "expected exactly one secret-without-configField violation, got: {violations}"
+    );
+
+    let rendered = violations.to_string();
+    for needle in ["API token", "ConfigFieldSecretShape"] {
+        assert!(
+            rendered.contains(needle),
+            "rejection message must name the node shape and the offending secret property; \
+             missing {needle:?} in:\n{rendered}"
+        );
+    }
+
+    println!("secret-without-configField rejection message:\n{rendered}");
+}
+
+#[test]
+fn valid_config_field_annotations_validate_and_are_readable_from_the_declaration_model() {
+    let declaration =
+        validate(CONFIG_FIELD_VALID).expect("config-field-valid.ttl must validate clean");
+
+    let label = declaration
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("/config-field-test#label"))
+        .expect("label property present");
+    assert_eq!(
+        label.config_field, None,
+        "label carries no contreforts:configField, matching vocabulary.ttl's own example \
+         (identity, not configuration)"
+    );
+
+    let api_url = declaration
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("apiUrl"))
+        .expect("apiUrl property present");
+    assert_eq!(api_url.config_field.as_deref(), Some("url"));
+
+    let api_token = declaration
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("apiToken"))
+        .expect("apiToken property present");
+    assert_eq!(api_token.config_field.as_deref(), Some("token"));
+    assert!(
+        api_token.secret,
+        "apiToken must carry contreforts:secret true"
+    );
 }
 
 #[test]

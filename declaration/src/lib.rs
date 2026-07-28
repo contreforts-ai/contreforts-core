@@ -59,11 +59,13 @@ pub use error::{Rule, Violation, Violations};
 pub use model::{Declaration, PropertyShape};
 pub use validate::validate;
 
-/// The declaration vocabulary (Part 1): three terms in
+/// The declaration vocabulary (Part 1): four terms in
 /// `https://contreforts.ds-labs.org/ontologies/declaration#` --
-/// `contreforts:secret`, `contreforts:category`, `contreforts:uiShape`.
-/// Embedded so a caller can inspect or re-serve it without a filesystem
-/// dependency on this crate's source layout.
+/// `contreforts:secret`, `contreforts:category`, `contreforts:uiShape`,
+/// and `contreforts:configField` (the fourth, added by
+/// contreforts/contreforts-core#16, D15). Embedded so a caller can inspect
+/// or re-serve it without a filesystem dependency on this crate's source
+/// layout.
 pub const VOCABULARY_TTL: &str = include_str!("vocabulary.ttl");
 
 /// The meta-shapes (Part 2): the SHACL shapes a connector declaration's
@@ -77,8 +79,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vocabulary_defines_exactly_the_three_terms() {
-        for term in ["secret", "category", "uiShape"] {
+    fn vocabulary_defines_exactly_the_four_terms() {
+        for term in ["secret", "category", "uiShape", "configField"] {
             assert!(
                 VOCABULARY_TTL.contains(&format!("contreforts:{term} a rdf:Property")),
                 "vocabulary.ttl should define contreforts:{term}"

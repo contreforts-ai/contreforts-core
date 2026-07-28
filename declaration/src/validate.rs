@@ -32,8 +32,9 @@ fn violation_from_meta_shape_result(result: &ValidationResult<'_>) -> Violation 
 }
 
 /// Validates `turtle` as a connector declaration: Part 2's meta-shapes,
-/// then the D14 (`sh:xone` cross-exclusion), D2 (`core:` namespace) and
-/// structural lints from Part 3, all run to completion and combined --
+/// then the D14 (`sh:xone` cross-exclusion), D2 (`core:` namespace),
+/// structural and D15 (`contreforts:configField`) lints from Part 3, all
+/// run to completion and combined --
 /// never short-circuited on the first failure, per Part 4's requirement
 /// that both real callers (a connector's `build.rs`, and the C3
 /// aggregator's `build.rs`) see every violation, not just the first.
@@ -84,6 +85,7 @@ pub fn validate(turtle: &str) -> Result<Declaration, Violations> {
     if let Some(shapes) = &own_shapes {
         violations.extend(lint::structural::check(shapes));
         violations.extend(lint::xone::check(shapes));
+        violations.extend(lint::config_field::check(shapes, &declaration_graph));
     }
     violations.extend(lint::core_ns::check(&declaration_graph));
 

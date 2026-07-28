@@ -1,0 +1,31 @@
+# SYNTHETIC, not a real connector. Exercises D15's rule 1
+# (contreforts-core#16, Part 3, lint::config_field::check_duplicates): two
+# property shapes on the same node shape must never name the same
+# contreforts:configField -- a silent overwrite whose outcome depends on
+# iteration order. This file is otherwise a minimal, meta-shapes-clean
+# declaration; the only thing wrong with it is that `apiUrl` and
+# `mirrorUrl` both claim contreforts:configField "url".
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix cftest:       <https://contreforts.ds-labs.org/ontologies/config-field-test#> .
+
+cftest:ConfigFieldConflictShape a sh:NodeShape ;
+    sh:targetClass cftest:ConfigFieldConflictConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path cftest:apiUrl ;
+        sh:name "API URL" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        contreforts:configField "url" ;
+    ] ;
+    sh:property [
+        sh:path cftest:mirrorUrl ;
+        sh:name "Mirror URL" ;
+        sh:datatype xsd:string ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+        contreforts:configField "url" ;
+    ] .

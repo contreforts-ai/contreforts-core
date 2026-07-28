@@ -7,6 +7,15 @@
 # contreforts-workspace#27) needed exactly these three between them, and
 # nothing else. Resist inventing a fourth without a declaration that
 # actually needs it.
+#
+# contreforts:configField (contreforts/contreforts-core#16, D15) is that
+# fourth term. Not invented speculatively: contreforts-config-api#6's
+# registry already carries a hand-written build_forgejo adapter asserting
+# "declared property X feeds ForgejoConfig's field Y" in Rust, and C7 rolls
+# out five more connectors -- five more bespoke adapters, each a place a
+# field name can silently disagree with its declaration and nothing
+# detects it, unless the correspondence is stated in the declaration
+# itself. See the term's own rdfs:comment below for the exact rule.
 ########################################################################
 
 @prefix rdf:         <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -58,4 +67,32 @@ This dual domain is recorded here in prose, not as a machine-checked
 owl:unionOf on rdfs:domain: rdfs:domain was never enforced by any consumer
 of this vocabulary, and a real union domain needs OWL for one axiom that
 nothing reads. Not worth it.""" ;
+    rdfs:range xsd:string .
+
+contreforts:configField a rdf:Property ;
+    rdfs:label "config field" ;
+    rdfs:comment """Names the field of the connector's runtime config
+struct that this property shape's value supplies, e.g. "url" for
+ForgejoConfig::url. A property shape without this term is not part of the
+runtime config at all -- it may be identity, storage-only, or presentation
+metadata instead, and simply carries no annotation.
+
+Explicit opt-in: there is deliberately no default that falls back to the
+property's own local name. `label` is why -- it is identity (which
+instance you mean), not configuration, so ForgejoConfig has no `label`
+field at all. Under a "same name by default" rule that would need a
+special case; under opt-in it just carries no contreforts:configField,
+which is also the truth about it. The cost is annotating fields even where
+the declared name and the struct field already agree -- accepted, because
+this states something (which properties reach the connector's config)
+that exists nowhere else once codegen or a generic registry adapter reads
+it.
+
+String, at most once per property shape. Two property shapes on one node
+shape must never name the same contreforts:configField, and a property
+shape carrying contreforts:secret true must also carry
+contreforts:configField -- both are existential rules a SHACL shape cannot
+express (absence of a violation vacuously conforms), so they are enforced
+as a Rust lint, not here.""" ;
+    rdfs:domain sh:PropertyShape ;
     rdfs:range xsd:string .
