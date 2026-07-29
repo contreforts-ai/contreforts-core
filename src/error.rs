@@ -23,6 +23,16 @@ pub enum ConnectorError {
         connector: String,
         operation: String,
     },
+
+    /// A connector was asked for an [`crate::models::EntityKind`] it does not handle.
+    ///
+    /// This is the shared shape for the fallback policy documented next to
+    /// `EntityKind` (`contreforts/contreforts-core#18`): with `EntityKind` now open,
+    /// nothing stops a connector's `match` from falling through silently. A connector
+    /// must return this error instead of an empty result whenever `pull`, `get` or
+    /// `fetch_content` is asked for a kind it does not recognise.
+    #[error("connector '{connector}' does not support entity kind '{kind}'")]
+    UnsupportedKind { connector: String, kind: String },
 }
 
 #[cfg(feature = "reqwest")]

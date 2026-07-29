@@ -51,3 +51,97 @@ pub trait ContrefortsConnector: Send + Sync {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A minimal connector that only recognises `EntityKind::CUSTOMER`, standing in for
+    /// any of the six real connectors. Exercises the fallback policy documented next to
+    /// `EntityKind` (`contreforts/contreforts-core#18`): a kind this connector does not
+    /// handle must error, naming both the kind and the connector -- never silently
+    /// return empty.
+    struct NarrowConnector;
+
+    #[async_trait::async_trait]
+    impl ContrefortsConnector for NarrowConnector {
+        fn source_name(&self) -> &str {
+            "narrow"
+        }
+
+        async fn pull(
+            &self,
+            kind: EntityKind,
+            _since: Option<NaiveDateTime>,
+        ) -> Result<Vec<Document>, ConnectorError> {
+            if kind == EntityKind::CUSTOMER {
+                return Ok(vec![]);
+            }
+            Err(ConnectorError::UnsupportedKind {
+                connector: self.source_name().to_string(),
+                kind: kind.as_str().to_string(),
+            })
+        }
+
+        async fn get(
+            &self,
+            kind: EntityKind,
+            _remote_id: &str,
+        ) -> Result<Document, ConnectorError> {
+            Err(ConnectorError::UnsupportedKind {
+                connector: self.source_name().to_string(),
+                kind: kind.as_str().to_string(),
+            })
+        }
+
+        async fn push(&self, doc: &Document) -> Result<Document, ConnectorError> {
+            Err(ConnectorError::UnsupportedKind {
+                connector: self.source_name().to_string(),
+                kind: doc.kind.as_str().to_string(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn unhandled_kind_errors_naming_kind_and_connector() {
+        let connector = NarrowConnector;
+
+        let err = connector
+            .pull(EntityKind::new("RiskScenario"), None)
+            .await
+            .expect_err("a kind this connector does not handle must error");
+
+        match err {
+            ConnectorError::UnsupportedKind { connector, kind } => {
+                assert_eq!(connector, "narrow");
+                assert_eq!(kind, "RiskScenario");
+            }
+            other => panic!("expected UnsupportedKind, got {other:?}"),
+        }
+    }
+
+    /// Mutation-proof for the fallback policy: a connector that took the "return empty
+    /// on an unhandled kind" shortcut instead of erroring must fail this test. Asserting
+    /// only `is_err()` (not matching the specific variant) is what catches an
+    /// `Ok(vec![])` fallback -- the exact failure mode this policy exists to rule out.
+    #[tokio::test]
+    async fn unhandled_kind_is_never_silently_empty() {
+        let connector = NarrowConnector;
+
+        let result = connector.pull(EntityKind::new("RiskScenario"), None).await;
+
+        assert!(
+            result.is_err(),
+            "connector returned {result:?} for an unhandled kind instead of erroring"
+        );
+    }
+
+    #[tokio::test]
+    async fn handled_kind_still_succeeds() {
+        let connector = NarrowConnector;
+
+        let result = connector.pull(EntityKind::CUSTOMER, None).await;
+
+        assert!(result.is_ok(), "a recognised kind must not error");
+    }
+}
