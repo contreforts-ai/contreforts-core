@@ -46,23 +46,48 @@ pub struct EntityKind(Cow<'static, str>);
 impl EntityKind {
     // Core's own 15 terms, kept as associated constants so construction of a known kind
     // stays a compile-checked, greppable identifier rather than a string literal that
-    // can typo silently (`EntityKind::new("Invoce")` would compile and run). The string
-    // value of each constant is the historical variant name, unchanged by this refactor.
-    pub const CUSTOMER: Self = Self(Cow::Borrowed("Customer"));
-    pub const CONTACT: Self = Self(Cow::Borrowed("Contact"));
-    pub const INVOICE: Self = Self(Cow::Borrowed("Invoice"));
-    pub const COMPANY: Self = Self(Cow::Borrowed("Company"));
-    pub const CUSTOMER_GROUP: Self = Self(Cow::Borrowed("CustomerGroup"));
-    pub const TERRITORY: Self = Self(Cow::Borrowed("Territory"));
-    pub const PROJECT: Self = Self(Cow::Borrowed("Project"));
-    pub const ISSUE: Self = Self(Cow::Borrowed("Issue"));
-    pub const ITEM: Self = Self(Cow::Borrowed("Item"));
-    pub const QUOTATION: Self = Self(Cow::Borrowed("Quotation"));
-    pub const MEETING: Self = Self(Cow::Borrowed("Meeting"));
-    pub const RESOLUTION: Self = Self(Cow::Borrowed("Resolution"));
-    pub const CALENDAR: Self = Self(Cow::Borrowed("Calendar"));
-    pub const CALENDAR_EVENT: Self = Self(Cow::Borrowed("CalendarEvent"));
-    pub const INTERACTION: Self = Self(Cow::Borrowed("Interaction"));
+    // can typo silently (`EntityKind::new("Invoce")` would compile and run).
+    //
+    // ## The string values are the old `as_str()` forms, deliberately
+    //
+    // Do not "tidy" these to CamelCase. The enum this replaces had **two** strings per
+    // variant, and they went to different durable places:
+    //
+    //   - `as_str()` -> `"invoice"`, `"calendar-event"` — written into vector-store chunk
+    //     metadata by `contreforts-rag/src/content.rs` (`metadata["kind"]`) and read back
+    //     on the refresh path;
+    //   - `erpnext_doctype()` -> `"Sales Invoice"`, `"Calendar Event"` — written into RDF
+    //     as `doctype_iri(..)`, i.e. `core:Sales%20Invoice`, on every synced entity.
+    //
+    // One constant cannot preserve both. Keeping the `as_str()` form was chosen for two
+    // reasons (contreforts/contreforts-core#18, decided 2026-07-29):
+    //
+    //   1. It keeps the serde representation identical. `#[serde(transparent)]` over these
+    //      values reproduces the old kebab-case wire format exactly, so anything that
+    //      round-tripped an `EntityKind` through JSON still does.
+    //   2. `"Sales Invoice"` in a `core:` IRI is ERPNext's doctype vocabulary leaking into
+    //      the shared ontology — precisely the debt contreforts/contreforts-core#12 exists
+    //      to remove. Dropping it here removes it rather than re-blessing it.
+    //
+    // The consequence, which is real and accepted: **stored `rdf:type` and subject IRIs
+    // change** from `core:Sales%20Invoice` to `core:invoice`. Entity RDF is re-derivable by
+    // re-sync — unlike embeddings, which are not — so this is paid by a re-sync rather than
+    // a hand-written migration, and it belongs to phase E's S3/S4 row.
+    pub const CUSTOMER: Self = Self(Cow::Borrowed("customer"));
+    pub const CONTACT: Self = Self(Cow::Borrowed("contact"));
+    pub const INVOICE: Self = Self(Cow::Borrowed("invoice"));
+    pub const COMPANY: Self = Self(Cow::Borrowed("company"));
+    pub const CUSTOMER_GROUP: Self = Self(Cow::Borrowed("customer-group"));
+    pub const TERRITORY: Self = Self(Cow::Borrowed("territory"));
+    pub const PROJECT: Self = Self(Cow::Borrowed("project"));
+    pub const ISSUE: Self = Self(Cow::Borrowed("issue"));
+    pub const ITEM: Self = Self(Cow::Borrowed("item"));
+    pub const QUOTATION: Self = Self(Cow::Borrowed("quotation"));
+    pub const MEETING: Self = Self(Cow::Borrowed("meeting"));
+    pub const RESOLUTION: Self = Self(Cow::Borrowed("resolution"));
+    pub const CALENDAR: Self = Self(Cow::Borrowed("calendar"));
+    pub const CALENDAR_EVENT: Self = Self(Cow::Borrowed("calendar-event"));
+    pub const INTERACTION: Self = Self(Cow::Borrowed("interaction"));
 
     /// Construct an `EntityKind` for any term — core's own or an extension's.
     ///
@@ -230,9 +255,21 @@ mod tests {
         // The wire representation is the term string itself, not a wrapper object --
         // required for contreforts-rag's round trip through the graph, where the kind is
         // stored as a bare string.
+        // `"customer"`, not `"Customer"`: this is the *old* kebab-case wire format,
+        // preserved on purpose so an EntityKind that round-tripped through JSON before
+        // this refactor still does. See the constants' own comment for why.
         let json = serde_json::to_string(&EntityKind::CUSTOMER).unwrap();
-        assert_eq!(json, "\"Customer\"");
+        assert_eq!(json, "\"customer\"");
+        assert_eq!(
+            serde_json::to_string(&EntityKind::CALENDAR_EVENT).unwrap(),
+            "\"calendar-event\"",
+            "the hyphenated form is the one vector-store chunk metadata holds"
+        );
+        // A connector-shipped term is carried verbatim -- core does not case-fold it.
         let json = serde_json::to_string(&EntityKind::new("RiskScenario")).unwrap();
         assert_eq!(json, "\"RiskScenario\"");
+        // And it round-trips.
+        let back: EntityKind = serde_json::from_str("\"calendar-event\"").unwrap();
+        assert_eq!(back, EntityKind::CALENDAR_EVENT);
     }
 }
