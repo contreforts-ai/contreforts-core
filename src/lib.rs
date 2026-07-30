@@ -1,6 +1,7 @@
 pub mod config;
 pub mod error;
 pub mod models;
+pub mod namespaces;
 pub mod traits;
 
 pub use config::GraphConfig;
