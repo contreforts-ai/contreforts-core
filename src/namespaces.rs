@@ -16,15 +16,25 @@
 //! stays in `contreforts-kg`: `contreforts/contreforts-kg#30` and phase E actively edit that
 //! vocabulary, and it is not used from the config side.
 
-pub const CORE_NS: &str = "https://contreforts.ds-labs.org/ontologies/core#";
-pub const DATA_NS: &str = "https://contreforts.ds-labs.org/data/";
-pub const SCHEMA: &str = "http://schema.org/";
-pub const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
-pub const RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
-pub const XSD: &str = "http://www.w3.org/2001/XMLSchema#";
+// `pub static`, not `pub const`, is deliberate here (contreforts/contreforts-workspace#58,
+// comment 7875): a `const` has no stable address -- it is inlined at each use site, and its
+// string data is subject to linker merging across crates, so an independently-declared copy
+// with a byte-identical value compares EQUAL to the original under `std::ptr::eq`. That made
+// the identity guards in `contreforts-kg/tests/namespaces_reexport.rs` decorative: they passed
+// whether or not the re-export was genuine. A `static` item has a single, stable address shared
+// by every name that refers to it (including a `pub use` re-export), so the same `ptr::eq`
+// comparison style correctly distinguishes a real re-export from a coincidentally-equal copy.
+// Verified safe to convert: nothing in the workspace uses these in a `const` context (`const
+// fn`, or assigning into another `const`) or in a `match` pattern -- both illegal for `static`.
+pub static CORE_NS: &str = "https://contreforts.ds-labs.org/ontologies/core#";
+pub static DATA_NS: &str = "https://contreforts.ds-labs.org/data/";
+pub static SCHEMA: &str = "http://schema.org/";
+pub static RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+pub static RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
+pub static XSD: &str = "http://www.w3.org/2001/XMLSchema#";
 
 /// Named graph that holds all configuration triples (companies, connectors).
-pub const CONFIG_GRAPH: &str = "https://contreforts.ds-labs.org/data/graph/config";
+pub static CONFIG_GRAPH: &str = "https://contreforts.ds-labs.org/data/graph/config";
 
 /// Named graph IRI for a company's data; also serves as the IRI prefix for that company's documents.
 /// Format: `https://contreforts.ds-labs.org/data/{company}/`
