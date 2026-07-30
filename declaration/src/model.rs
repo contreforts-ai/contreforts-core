@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use oxigraph::model::{NamedNodeRef, NamedOrBlankNodeRef};
+use oxigraph::model::{NamedNodeRef, NamedOrBlankNodeRef, TermRef};
 use oxigraph::store::Store;
 use shacl_rust::Shape;
 use shacl_rust::core::constraints::Constraint;
@@ -87,6 +87,56 @@ pub struct PropertyShape {
     /// in `lint::config_field` for the two existential rules this crate
     /// enforces about it that a meta-shape cannot.
     pub config_field: Option<String>,
+    /// `sh:in`'s value list (contreforts/contreforts-config-api#27 item 1):
+    /// the property's enumerated legal values, in declaration order, e.g.
+    /// `["basic", "bearer"]` for caldav's `authMode`. `None` when the
+    /// property shape carries no `sh:in` -- legal, and the common case.
+    /// Previously dropped entirely by the constraint match's `_ => {}`
+    /// arm; a form generator has no way to render a picker without it.
+    pub in_values: Option<Vec<String>>,
+    /// `sh:pattern`'s value (contreforts/contreforts-config-api#27 item 1),
+    /// e.g. forgejo:instanceUrl's `"^https?://[^\\s]+$"`. `None` when
+    /// absent. Same previously-dropped-by-`_ => {}` defect as `in_values`.
+    pub pattern: Option<String>,
+    /// `sh:minInclusive`'s value, as its literal's lexical form (e.g.
+    /// `"1"`) rather than a parsed number -- this crate does not know
+    /// whether a given property's range is integer, decimal or something
+    /// else, and re-parsing it here would silently narrow that. A caller
+    /// that wants a typed number (a JSON response, say) parses this
+    /// itself, knowing its own target type. `None` when absent. Same
+    /// previously-dropped-by-`_ => {}` defect as `in_values`/`pattern`.
+    pub min_inclusive: Option<String>,
+    /// `sh:maxInclusive`'s value, same shape and reasoning as
+    /// `min_inclusive` above.
+    pub max_inclusive: Option<String>,
+}
+
+/// One `sh:xone` alternative of a connector whose node shape carries a
+/// tagged union (contreforts/contreforts-config-api#27 item 2; today, that
+/// is exactly caldav's and o365's own auth unions, both flagged with
+/// `contreforts:uiShape "discriminated-union"` on the connector's node
+/// shape). `Declaration.properties` deliberately never walks into
+/// `sh:xone` -- see its own doc comment -- so this is the one place an
+/// alternative's own field set, and its own real `sh:minCount`
+/// (invisible at the flat level; see `Declaration.properties`'s doc
+/// comment and `merge_variant_requiredness` below), are exposed at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclarationVariant {
+    /// The single legal value of the discriminator property (e.g.
+    /// caldav:authMode) that selects this alternative -- read off the
+    /// alternative's own copy of that property, which restricts `sh:in`
+    /// to exactly that one value (e.g. `caldav:BasicAuthShape` restricts
+    /// `authMode` to `sh:in ( "basic" )`). Every real `sh:xone` alternative
+    /// this crate has seen carries exactly one such property; an
+    /// alternative with none is dropped rather than fabricating a
+    /// discriminant (see `build_variants`).
+    pub discriminant_value: String,
+    /// This alternative's own `sh:property` children, built the same way
+    /// as `Declaration.properties`, MINUS any that carry `sh:maxCount 0`
+    /// -- D14's own cross-exclusion marker for "belongs to a sibling
+    /// alternative, forbidden here" (`lint::xone`), not a real field of
+    /// this variant.
+    pub properties: Vec<PropertyShape>,
 }
 
 /// A connector's self-description, once it has passed meta-shape
@@ -118,7 +168,19 @@ pub struct Declaration {
     /// `forgejo:GroupMappingShape`) -- those are validation structure, not
     /// this connector's flat, renderable field list. A form generator that
     /// needs a nested shape's own fields follows `sh:node` itself.
+    ///
+    /// A field whose requiredness genuinely depends on which `sh:xone`
+    /// alternative applies (e.g. caldav:password, required only under
+    /// `authMode="basic"`) still appears here with its real `sh:minCount`
+    /// folded in from the one alternative that declares it, when exactly
+    /// one alternative does (see `merge_variant_requiredness`) -- not the
+    /// flat restatement's own, deliberately absent, `sh:minCount`.
     pub properties: Vec<PropertyShape>,
+    /// This connector's own `sh:xone` alternatives, if its node shape
+    /// declares one (contreforts/contreforts-config-api#27 item 2) --
+    /// empty for a connector with no tagged union. See
+    /// [`DeclarationVariant`].
+    pub variants: Vec<DeclarationVariant>,
 }
 
 /// Presentation metadata not modeled by SHACL Core's typed `Shape` API,
@@ -237,6 +299,20 @@ fn simple_path_iri(shape: &Shape<'_>) -> Option<String> {
     }
 }
 
+/// A single RDF term's lexical value, for the two constraint kinds this
+/// module reads a raw term out of (`sh:in`'s list members, `sh:minInclusive`
+/// / `sh:maxInclusive`'s bound). Mirrors `shacl-rust`'s own
+/// `get_string_value` (`utils.rs`), which does the same for a predicate
+/// read directly off the graph -- this is the term-level equivalent for a
+/// constraint already parsed into a `TermRef`.
+fn term_literal_value(term: &TermRef<'_>) -> Option<String> {
+    match term {
+        TermRef::Literal(lit) => Some(lit.value().to_string()),
+        TermRef::NamedNode(n) => Some(n.as_str().to_string()),
+        _ => None,
+    }
+}
+
 fn build_property_shape(
     shape: &Shape<'_>,
     graph: &oxigraph::model::Graph,
@@ -247,11 +323,30 @@ fn build_property_shape(
     let mut datatype = None;
     let mut min_count = None;
     let mut max_count = None;
+    let mut in_values = None;
+    let mut pattern = None;
+    let mut min_inclusive = None;
+    let mut max_inclusive = None;
     for constraint in &shape.constraints {
         match constraint {
             Constraint::Datatype(d) => datatype = Some(d.0.as_str().to_string()),
             Constraint::MinCount(c) => min_count = Some(c.0),
             Constraint::MaxCount(c) => max_count = Some(c.0),
+            // contreforts/contreforts-config-api#27 item 1: these four
+            // constraint kinds used to fall through to `_ => {}` here and
+            // vanish -- `PropertyShape` had no field to hold any of them.
+            Constraint::In(values) => {
+                in_values = Some(
+                    values
+                        .0
+                        .iter()
+                        .filter_map(term_literal_value)
+                        .collect::<Vec<_>>(),
+                );
+            }
+            Constraint::Pattern(p) => pattern = Some(p.pattern.clone()),
+            Constraint::MinInclusive(term) => min_inclusive = term_literal_value(&term.0),
+            Constraint::MaxInclusive(term) => max_inclusive = term_literal_value(&term.0),
             _ => {}
         }
     }
@@ -279,20 +374,35 @@ fn build_property_shape(
         order,
         default_value,
         config_field,
+        in_values,
+        pattern,
+        min_inclusive,
+        max_inclusive,
     })
 }
 
-/// The connector's own node shape: the sole `sh:NodeShape` carrying
-/// `sh:targetClass`. `validate()` has already run the structural lint
-/// requiring at least one to exist, and meta-shape META-1 requiring
-/// exactly one `contreforts:category` on it, before this is called -- so
-/// this only has to pick one when (in principle) more than one exists,
-/// which no real declaration does today. Picks the first in parse order,
-/// deterministically, and documents that choice here rather than silently.
-fn find_connector_shape<'a, 'g>(shapes: &'a [Shape<'g>]) -> Option<&'a Shape<'g>> {
+/// Every `sh:NodeShape` carrying `sh:targetClass` in `shapes` -- one per
+/// connector a graph describes. `validate()` has already run the
+/// structural lint requiring at least one to exist before this is called.
+///
+/// contreforts/contreforts-config-api#27 item 3: this used to be
+/// `find_connector_shape` (singular), `.find()`-ing only the first such
+/// shape and documenting that as safe "because no real declaration [had]
+/// more than one" -- true only as long as every caller validated one
+/// connector's own `declaration.ttl` in isolation. `PRODUCT_GRAPH_TTL`,
+/// the union of every enabled connector's own declaration, is the first
+/// graph with more than one: calling the old, singular function against
+/// it silently picked one arbitrary connector and reported `Ok`,
+/// discarding the rest -- exactly the "absence presenting as success"
+/// defect class this epic exists to close, arriving in the one function
+/// several other parts of it depend on. Selecting *by kind* -- one shape
+/// per connector actually present, not one shape total -- is what
+/// `build_declaration`/`build_declarations` below both build on.
+fn find_connector_shapes<'a, 'g>(shapes: &'a [Shape<'g>]) -> Vec<&'a Shape<'g>> {
     shapes
         .iter()
-        .find(|s| s.is_node_shape() && s.targets.iter().any(|t| matches!(t, Target::Class(_))))
+        .filter(|s| s.is_node_shape() && s.targets.iter().any(|t| matches!(t, Target::Class(_))))
+        .collect()
 }
 
 fn target_class_iri(shape: &Shape<'_>) -> Option<String> {
@@ -302,40 +412,203 @@ fn target_class_iri(shape: &Shape<'_>) -> Option<String> {
     })
 }
 
-pub(crate) fn build_declaration(
-    shapes: &[Shape<'_>],
-    graph: &oxigraph::model::Graph,
-) -> Result<Declaration, Violation> {
-    let connector_shape = find_connector_shape(shapes).ok_or_else(|| {
-        Violation::structural(
-            "no sh:NodeShape with sh:targetClass found when building the Declaration -- \
-             the structural lint should have already rejected this declaration before \
-             reaching model construction",
-        )
-    })?;
+/// The single `sh:in` value discriminating one `sh:xone` alternative shape
+/// from its siblings -- recognised as the one property shape inside
+/// `alternative` whose own `sh:in` names exactly one legal value (e.g.
+/// `caldav:BasicAuthShape`'s own copy of `caldav:authMode`, restricted to
+/// `sh:in ( "basic" )`, vs. the flat restatement's `sh:in ( "basic"
+/// "bearer" )` with two). `None` if no property shape matches -- an
+/// alternative this crate cannot honestly name a discriminant for is
+/// dropped by `build_variants` rather than fabricating one.
+fn discriminant_value(alternative: &Shape<'_>) -> Option<String> {
+    alternative.property_shapes.iter().find_map(|p| {
+        p.constraints.iter().find_map(|c| match c {
+            Constraint::In(values) if values.0.len() == 1 => term_literal_value(&values.0[0]),
+            _ => None,
+        })
+    })
+}
 
-    let target_class = target_class_iri(connector_shape).ok_or_else(|| {
+/// D14's own marker (`lint::xone`) for "this predicate belongs to a
+/// sibling alternative, forbidden here" -- not a real field of the
+/// alternative that carries it.
+fn has_max_count_zero(shape: &Shape<'_>) -> bool {
+    shape
+        .constraints
+        .iter()
+        .any(|c| matches!(c, Constraint::MaxCount(m) if m.0 == 0))
+}
+
+/// `shape`'s own `sh:xone` alternatives (contreforts/contreforts-config-api#27
+/// item 2), if it declares one -- empty otherwise. Reads `Constraint::Xone`
+/// directly off `shape.constraints`, exactly like `lint::xone::check`
+/// already does for D14, rather than re-deriving it some other way.
+fn build_variants(
+    shape: &Shape<'_>,
+    graph: &oxigraph::model::Graph,
+    presentation: &HashMap<String, Presentation>,
+) -> Vec<DeclarationVariant> {
+    shape
+        .constraints
+        .iter()
+        .find_map(|c| match c {
+            Constraint::Xone(alternatives) => Some(&alternatives.0),
+            _ => None,
+        })
+        .into_iter()
+        .flatten()
+        .filter_map(|alternative| {
+            let discriminant_value = discriminant_value(alternative)?;
+            let properties = alternative
+                .property_shapes
+                .iter()
+                .filter(|p| !has_max_count_zero(p))
+                .filter_map(|p| build_property_shape(p, graph, presentation))
+                .collect();
+            Some(DeclarationVariant {
+                discriminant_value,
+                properties,
+            })
+        })
+        .collect()
+}
+
+/// contreforts/contreforts-config-api#27 item 3: a field whose real
+/// requiredness is declared only inside one `sh:xone` alternative (e.g.
+/// caldav:password's `sh:minCount 1`, declared only inside
+/// `caldav:BasicAuthShape`, never on its own flat restatement, which
+/// carries no `sh:minCount` at all "by design" -- see
+/// `Declaration.properties`'s own doc comment) is invisible to a consumer
+/// of the flat property list alone. Where exactly one variant both
+/// mentions the path (variants already exclude a sibling's `sh:maxCount 0`
+/// predicates -- see `build_variants`) and requires it (`sh:minCount` >
+/// 0), that is this field's real requirement whenever this connector is
+/// relevant at all -- folded back onto the flat entry here. A field
+/// required by more than one variant (ambiguous at the flat level) or not
+/// required by any is left exactly as its own flat declaration says.
+fn merge_variant_requiredness(properties: &mut [PropertyShape], variants: &[DeclarationVariant]) {
+    for prop in properties.iter_mut() {
+        if prop.min_count.is_some() {
+            continue;
+        }
+        let mut required_by = variants
+            .iter()
+            .filter_map(|v| v.properties.iter().find(|vp| vp.path == prop.path))
+            .filter_map(|vp| vp.min_count.filter(|&c| c > 0));
+        if let Some(only) = required_by.next()
+            && required_by.next().is_none()
+        {
+            prop.min_count = Some(only);
+        }
+    }
+}
+
+/// One connector's own `Declaration`, built entirely from its own node
+/// shape -- `shape`/`target_class`/`category`/`ui_shape`/`properties`/
+/// `variants` all describe exactly `shape` and nothing else. The one
+/// building block both `build_declaration` (single, aggregated) and
+/// `build_declarations` (one per connector) below share.
+fn build_declaration_for_shape(
+    shape: &Shape<'_>,
+    graph: &oxigraph::model::Graph,
+    presentation: &HashMap<String, Presentation>,
+) -> Result<Declaration, Violation> {
+    let target_class = target_class_iri(shape).ok_or_else(|| {
         Violation::structural(format!(
             "connector shape {} has no plain-IRI sh:targetClass",
-            connector_shape.node
+            shape.node
         ))
     })?;
 
-    let category = get_string_value(graph, connector_shape.node, CATEGORY_PREDICATE);
-    let ui_shape = get_string_value(graph, connector_shape.node, UI_SHAPE_PREDICATE);
+    let category = get_string_value(graph, shape.node, CATEGORY_PREDICATE);
+    let ui_shape = get_string_value(graph, shape.node, UI_SHAPE_PREDICATE);
 
-    let presentation = presentation_by_node(graph)?;
-    let properties = connector_shape
+    let mut properties: Vec<PropertyShape> = shape
         .property_shapes
         .iter()
-        .filter_map(|p| build_property_shape(p, graph, &presentation))
+        .filter_map(|p| build_property_shape(p, graph, presentation))
         .collect();
 
+    let variants = build_variants(shape, graph, presentation);
+    merge_variant_requiredness(&mut properties, &variants);
+
     Ok(Declaration {
-        shape: connector_shape.node.to_string(),
+        shape: shape.node.to_string(),
         target_class,
         category,
         ui_shape,
         properties,
+        variants,
     })
+}
+
+const NO_CONNECTOR_SHAPE_MESSAGE: &str = "no sh:NodeShape with sh:targetClass found when building the Declaration -- the \
+     structural lint should have already rejected this declaration before reaching model \
+     construction";
+
+/// `validate()`'s own entry point: always exactly one `Declaration`, for
+/// backward compatibility with every existing caller (a connector's own
+/// `build.rs`/tests, each validating one connector's own `declaration.ttl`
+/// in isolation -- there, `find_connector_shapes` returns exactly one
+/// shape and the fold below is a no-op).
+///
+/// contreforts/contreforts-config-api#27 item 3: for a graph that unions
+/// more than one connector's own shape (`PRODUCT_GRAPH_TTL` is the only
+/// one that does), this used to silently keep only the first shape found
+/// -- `.properties` reflected one arbitrary connector while reporting
+/// `Ok` for the whole graph. Every qualifying shape's own
+/// `properties`/`variants` are folded into the one `Declaration` returned
+/// here instead, so `.properties` genuinely reflects the whole graph
+/// rather than one arbitrary survivor. `.shape`/`.target_class`/
+/// `.category`/`.ui_shape` still describe only the first shape found --
+/// those four are inherently singular per connector and have no honest
+/// merge across differently-typed connectors; a caller that needs them
+/// scoped per kind should use [`build_declarations`] instead, which is
+/// exactly what it is for.
+pub(crate) fn build_declaration(
+    shapes: &[Shape<'_>],
+    graph: &oxigraph::model::Graph,
+) -> Result<Declaration, Violation> {
+    let connector_shapes = find_connector_shapes(shapes);
+    if connector_shapes.is_empty() {
+        return Err(Violation::structural(NO_CONNECTOR_SHAPE_MESSAGE));
+    }
+
+    let presentation = presentation_by_node(graph)?;
+    let mut declarations = connector_shapes
+        .into_iter()
+        .map(|shape| build_declaration_for_shape(shape, graph, &presentation))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut primary = declarations.remove(0);
+    for rest in declarations {
+        primary.properties.extend(rest.properties);
+        primary.variants.extend(rest.variants);
+    }
+    Ok(primary)
+}
+
+/// The per-kind alternative to `build_declaration`: one properly-scoped
+/// `Declaration` per qualifying `sh:NodeShape` in `shapes`, each carrying
+/// only that shape's own properties/variants -- not one shape's fields
+/// silently standing in for every connector present, and not the same
+/// shape repeated. Exposed publicly as [`crate::declarations`], for a
+/// caller (contreforts-config-api#27's product-graph route is the first)
+/// that needs the whole product graph split back out by connector kind,
+/// which `build_declaration`'s single, aggregated `Declaration` cannot
+/// express.
+pub(crate) fn build_declarations(
+    shapes: &[Shape<'_>],
+    graph: &oxigraph::model::Graph,
+) -> Result<Vec<Declaration>, Violation> {
+    let connector_shapes = find_connector_shapes(shapes);
+    if connector_shapes.is_empty() {
+        return Err(Violation::structural(NO_CONNECTOR_SHAPE_MESSAGE));
+    }
+
+    let presentation = presentation_by_node(graph)?;
+    connector_shapes
+        .into_iter()
+        .map(|shape| build_declaration_for_shape(shape, graph, &presentation))
+        .collect()
 }
