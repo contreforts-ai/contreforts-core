@@ -49,12 +49,27 @@
 //! generalised), no aggregation/product-graph/collision-detection (C3),
 //! and no connector wiring (C7) -- this crate is usable by a connector's
 //! `build.rs`, but nothing here calls it from one yet.
+//!
+//! ## Server-side connector-instance validation
+//!
+//! [`connector_validation`] holds the *other* half of this crate's SHACL usage: not "is this
+//! declaration itself well-formed" (the rest of this crate), but "does a connector instance,
+//! about to be written to a config store, conform to a declared connector's shape" --
+//! relocated here from `contreforts-kg::connector_validation` by
+//! contreforts/contreforts-workspace#58 (comment 7791), item D3a, since both `contreforts-kg`
+//! and the future `contreforts-config` (D3c) need it and neither should have to depend on the
+//! other to reach it. See that module's own docs for the case-1/case-2 undeclared-kind policy.
 
+mod connector_validation;
 mod error;
 mod lint;
 mod model;
 mod validate;
 
+pub use connector_validation::{
+    ConnectorDeclarations, ConnectorIris, ConnectorValidationOutcome, ConnectorValidator,
+    ConnectorValidatorError, ConnectorViolation,
+};
 pub use error::{Rule, Violation, Violations};
 pub use model::{Declaration, DeclarationVariant, PropertyShape};
 pub use validate::{declarations, validate};

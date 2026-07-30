@@ -20,3 +20,11 @@ shacl-rust = "=0.2.9"
 # manifest has to stand on its own even outside that workspace.
 oxigraph = "0.5"
 thiserror = "2"
+# Added by the connector_validation module's move from contreforts-kg
+# (contreforts/contreforts-workspace#58, comment 7791, item D3a):
+# `ConnectorValidator::new` logs its case-2 (undeclared-kind) report at
+# `tracing::info!` so it is visible by default, not hidden behind `debug!`.
+# Matches the outer workspace's pin (see the root Cargo.toml). Deliberately
+# NOT `{ workspace = true }`, for the same reason as the pins above: this
+# crate's manifest has to stand on its own even outside that workspace.
+tracing = "0.1"
