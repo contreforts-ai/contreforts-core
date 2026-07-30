@@ -56,8 +56,8 @@ mod model;
 mod validate;
 
 pub use error::{Rule, Violation, Violations};
-pub use model::{Declaration, PropertyShape};
-pub use validate::validate;
+pub use model::{Declaration, DeclarationVariant, PropertyShape};
+pub use validate::{declarations, validate};
 
 /// The declaration vocabulary (Part 1): four terms in
 /// `https://contreforts.ds-labs.org/ontologies/declaration#` --

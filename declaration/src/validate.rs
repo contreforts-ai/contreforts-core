@@ -53,6 +53,30 @@ fn violation_from_meta_shape_result(result: &ValidationResult<'_>) -> Violation 
 /// something a `panic!` can print directly:
 /// `panic!("{}", declaration.unwrap_err())`.
 pub fn validate(turtle: &str) -> Result<Declaration, Violations> {
+    run_pipeline(turtle, model::build_declaration)
+}
+
+/// The per-kind alternative to [`validate`] (contreforts/contreforts-config-api#27 item 3):
+/// runs the identical Part 2/Part 3 pipeline, but returns one [`Declaration`] per qualifying
+/// `sh:NodeShape` in `turtle` instead of aggregating them into one. For a `turtle` describing
+/// exactly one connector -- every real declaration.ttl in isolation -- this returns a
+/// single-element `Vec` equivalent to [`validate`]'s own `Declaration`. For a graph unioning
+/// several connectors' own shapes (`contreforts-product`'s `PRODUCT_GRAPH_TTL` is the only one
+/// today), this is what a caller that needs the result split back out by connector kind should
+/// use -- `validate`'s own `Declaration` cannot express that; see its own doc comment.
+pub fn declarations(turtle: &str) -> Result<Vec<Declaration>, Violations> {
+    run_pipeline(turtle, model::build_declarations)
+}
+
+/// Shared by [`validate`] and [`declarations`]: Part 2 (meta-shapes.ttl) then Part 3 (the
+/// D14/D2/structural lints), run to completion and combined exactly as `validate`'s own doc
+/// comment describes, before handing the parsed shapes and graph to `build` -- either
+/// `model::build_declaration` or `model::build_declarations`, so both entry points share one
+/// pipeline rather than drifting apart under separate maintenance.
+fn run_pipeline<T>(
+    turtle: &str,
+    build: impl FnOnce(&[shacl_rust::Shape<'_>], &oxigraph::model::Graph) -> Result<T, Violation>,
+) -> Result<T, Violations> {
     let declaration_graph = match read_graph_from_string(turtle, "turtle") {
         Ok(graph) => graph,
         Err(e) => {
@@ -97,8 +121,8 @@ pub fn validate(turtle: &str) -> Result<Declaration, Violations> {
     // would already have failed otherwise, since it required a parse to
     // even run) and there's at least one sh:NodeShape with sh:targetClass.
     let shapes = own_shapes.expect("own_shapes is Some when no violations were collected");
-    match model::build_declaration(&shapes, &declaration_graph) {
-        Ok(declaration) => Ok(declaration),
+    match build(&shapes, &declaration_graph) {
+        Ok(result) => Ok(result),
         Err(v) => Err(Violations::new(vec![v])),
     }
 }
