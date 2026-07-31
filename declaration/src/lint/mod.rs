@@ -16,8 +16,18 @@
 //!     doc comment for a contradiction found in the issue text) a
 //!     `contreforts:secret true` property shape must carry one too, once
 //!     its node shape uses the term at all.
+//!   - [`entity_kind`] -- contreforts/contreforts-kg#30: no two
+//!     `rdfs:Class` subjects under one connector's own namespace may name
+//!     the same `contreforts:entityKind` value -- graph-wide iteration,
+//!     scoped by namespace rather than by node shape (entity classes have
+//!     no SHACL structure tying them to one), and deliberately NOT
+//!     graph-wide overall; see that module's own doc comment for the real
+//!     production caller (`contreforts_declaration::declarations` over
+//!     `contreforts-product`'s unioned graph) that would false-positive
+//!     under a graph-wide scope.
 
 pub(crate) mod config_field;
 pub(crate) mod core_ns;
+pub(crate) mod entity_kind;
 pub(crate) mod structural;
 pub(crate) mod xone;

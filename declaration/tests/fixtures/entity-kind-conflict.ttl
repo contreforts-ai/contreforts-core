@@ -1,0 +1,42 @@
+# SYNTHETIC, not a real connector. Exercises the entityKind lint's rule
+# (contreforts/contreforts-kg#30, "What to build" item 1; mechanically
+# identical in shape to D15's contreforts:configField rule 1,
+# lint::config_field::check_duplicates): two rdfs:Class subjects under the
+# SAME connector's own namespace must never name the same
+# contreforts:entityKind value -- it would be ambiguous which class a
+# synced document's rdf:type should resolve to
+# (EntityDeclarations::resolve_class_iri, contreforts-kg/src/
+# entity_declarations.rs, silently overwrites on exactly this fact
+# pattern today: the last-inserted (source, kind) entry in its resolved
+# HashMap wins, an outcome that depends on iteration order -- the same
+# defect class D15 rule 1 was written to catch for contreforts:configField).
+# This file is otherwise a minimal, meta-shapes-clean declaration; the only
+# thing wrong with it is that ektest:PrimaryAccount and
+# ektest:SecondaryAccount both claim contreforts:entityKind "customer".
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix ektest:       <https://contreforts.ds-labs.org/ontologies/entity-kind-test#> .
+
+ektest:EntityKindConflictShape a sh:NodeShape ;
+    sh:targetClass ektest:EntityKindConflictConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path ektest:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .
+
+ektest:PrimaryAccount a rdfs:Class ;
+    rdfs:label "Primary account" ;
+    rdfs:comment "SYNTHETIC test-only entity class." ;
+    contreforts:entityKind "customer" .
+
+ektest:SecondaryAccount a rdfs:Class ;
+    rdfs:label "Secondary account" ;
+    rdfs:comment """SYNTHETIC test-only entity class, deliberately conflicting
+with ektest:PrimaryAccount on the same contreforts:entityKind value.""" ;
+    contreforts:entityKind "customer" .

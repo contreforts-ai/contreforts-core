@@ -1,0 +1,66 @@
+# SYNTHETIC -- two independent connectors' own declarations, unioned into
+# one graph. Models contreforts-product's real PRODUCT_GRAPH_TTL union:
+# crates/contreforts-config-api/src/routes/product_graph.rs:83 calls
+# contreforts_declaration::declarations() against exactly that union, and
+# declarations() shares validate()'s own Part-3 lint pipeline over the
+# WHOLE unioned graph before ever splitting per connector shape
+# (contreforts-declaration/src/validate.rs's run_pipeline runs
+# lint::core_ns::check and friends against declaration_graph as a whole,
+# unconditionally, before build_declarations() walks find_connector_shapes
+# to split it back out by kind).
+#
+# Two DIFFERENT connectors legitimately reusing the same
+# contreforts:entityKind value (both minting an EntityKind::CUSTOMER
+# document -- exactly what forgejo:Organization does today, and what any
+# future CRM-flavoured connector reusing the same core EntityKind constant
+# would also do) must NOT be flagged as a conflict. Only two classes
+# WITHIN one connector's own namespace naming the same value is the bug
+# entity-kind-conflict.ttl exercises.
+#
+# This file is the proof the entityKind duplicate lint is scoped
+# correctly: a naively graph-wide implementation (mirroring lint::core_ns's
+# own graph-wide style -- right for D2's "is this subject, wherever it
+# appears, something other than an alignment stub", wrong here) would
+# wrongly reject this file, since ekone:Account and ektwo:Client both name
+# contreforts:entityKind "customer" somewhere in the same input graph.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix ekone:        <https://contreforts.ds-labs.org/ontologies/entity-kind-connector-one#> .
+@prefix ektwo:        <https://contreforts.ds-labs.org/ontologies/entity-kind-connector-two#> .
+
+ekone:ConnectorOneShape a sh:NodeShape ;
+    sh:targetClass ekone:ConnectorOne ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path ekone:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .
+
+ekone:Account a rdfs:Class ;
+    rdfs:label "Connector one account" ;
+    rdfs:comment "SYNTHETIC test-only entity class, connector one." ;
+    contreforts:entityKind "customer" .
+
+ektwo:ConnectorTwoShape a sh:NodeShape ;
+    sh:targetClass ektwo:ConnectorTwo ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path ektwo:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .
+
+ektwo:Client a rdfs:Class ;
+    rdfs:label "Connector two client" ;
+    rdfs:comment """SYNTHETIC test-only entity class, connector two --
+deliberately reuses connector one's contreforts:entityKind "customer"
+value; this is legitimate (both connectors happen to type an
+EntityKind::CUSTOMER document) and must not be rejected.""" ;
+    contreforts:entityKind "customer" .
