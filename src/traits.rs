@@ -9,6 +9,16 @@ pub trait ContrefortsConnector: Send + Sync {
     /// Unique lowercase name identifying this adapter ("erpnext", "pennylane", …).
     fn source_name(&self) -> &str;
 
+    /// This connector's own declaration Turtle. `""` means "declares no entity
+    /// vocabulary" and keeps the connector in the silent-CORE_NS fallback (case 2).
+    ///
+    /// Lets a driver holding only `Box<dyn ContrefortsConnector>` values build a real
+    /// `EntityDeclarations` from the connectors it already holds, keyed by each
+    /// connector's own `source_name()` (contreforts-core#28).
+    fn declaration_ttl(&self) -> &'static str {
+        ""
+    }
+
     /// Pull all entities of `kind`, optionally filtered to records modified after `since`.
     async fn pull(
         &self,
@@ -143,5 +153,31 @@ mod tests {
         let result = connector.pull(EntityKind::CUSTOMER, None).await;
 
         assert!(result.is_ok(), "a recognised kind must not error");
+    }
+
+    /// Pins contreforts-core#28's supply seam: `declaration_ttl()`'s default must be the empty
+    /// string, so a connector that does not override it (`NarrowConnector`, standing in for any
+    /// third-party connector that predates this method or simply never declares vocabulary)
+    /// behaves byte-identically to today -- a true no-op, not merely "doesn't error". This is
+    /// currently a compile error (`declaration_ttl` does not exist on `ContrefortsConnector`
+    /// yet), which is the sanctioned RED per contreforts-kg/CONTRIBUTING.md#3: "a compile error
+    /// against a not-yet-existing symbol counts."
+    ///
+    /// Mutation-proof: if the default were ever anything other than `""` (e.g. some sentinel, or
+    /// `None`-like placeholder text), this assertion -- comparing against the literal empty
+    /// string, not against any constant the implementation defines -- fails naming the exact
+    /// wrong value returned.
+    #[test]
+    fn connector_that_does_not_override_declaration_ttl_gets_the_empty_no_op_default() {
+        let connector = NarrowConnector;
+
+        assert_eq!(
+            connector.declaration_ttl(),
+            "",
+            "a connector that does not override declaration_ttl() must get the empty-string \
+             default (contreforts-core#28) -- got {:?} instead, which is not the documented \
+             no-op and would change behaviour for every connector that predates this method",
+            connector.declaration_ttl()
+        );
     }
 }
