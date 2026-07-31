@@ -1,0 +1,104 @@
+########################################################################
+# contreforts-core canonical SKOS concept scheme
+#
+# contreforts/contreforts-workspace#83 (phase E / E2, child of #61, the
+# phase E tracker, itself a child of the bootstrap epic #20). Core ships
+# exactly one `skos:ConceptScheme`, `core:CoreConcepts`, and exactly one
+# `skos:Concept` per one of `EntityKind`'s 15 associated constants
+# (`crates/contreforts-core/src/models.rs`), each concept's local name
+# being that constant's `as_str()` value verbatim.
+#
+# Before this file existed, contreforts-connector-forgejo's and
+# contreforts-connector-o365's `declaration.ttl` (and this crate's own
+# frozen test fixtures mirroring them) each reproduced a minimal, hand-
+# written subset of this same stub as an alignment target -- "reproduced
+# only so skos:closeMatch/exactMatch below has a target", per those
+# files' own former comments. #83 replaces every one of those ad hoc
+# copies with this single, canonical source, embedded as
+# `contreforts_declaration::CONCEPTS_TTL` and unioned into the Part 2
+# meta-shapes validation graph inside `validate.rs`'s `run_meta_shapes` --
+# never into the plain declaration graph Part 3's `lint::core_ns` and
+# `lint::entity_kind` see, or core's own 15 concepts would look
+# "connector-defined" and the newly tightened D2 carve-out
+# (`lint/core_ns.rs`) would reject every declaration outright. See that
+# module's own doc comment for the carve-out's new, closed shape: a
+# connector may REFERENCE a `core:` concept (as the object of
+# `skos:exactMatch`/`closeMatch`/`inScheme`) but may no longer DEFINE one
+# (assert `rdf:type skos:Concept`/`skos:ConceptScheme` on a `core:`
+# subject) -- that is now core's job alone, done here, once.
+#
+# This scheme is AUTHORITATIVE for core's own 15 terms, NOT EXHAUSTIVE of
+# every legal `contreforts:entityKind` value. `EntityKind` is an open
+# newtype (contreforts-core#18): a connector minting an extension term
+# this scheme has no concept for (e.g. "risk-scenario") is exercising the
+# escape hatch `EntityKind::new` exists for, not doing anything wrong.
+# Nothing in this file, or in the lints that consume it, may become a
+# closed-world check against this concept set.
+########################################################################
+
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix core: <https://contreforts.ds-labs.org/ontologies/core#> .
+
+core:CoreConcepts a skos:ConceptScheme ;
+    rdfs:label "Contreforts core concepts" .
+
+core:customer a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Customer"@en .
+
+core:contact a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Contact"@en .
+
+core:invoice a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Invoice"@en .
+
+core:company a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Company"@en .
+
+core:customer-group a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Customer group"@en .
+
+core:territory a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Territory"@en .
+
+core:project a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Project"@en .
+
+core:issue a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Issue"@en .
+
+core:item a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Item"@en .
+
+core:quotation a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Quotation"@en .
+
+core:meeting a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Meeting"@en .
+
+core:resolution a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Resolution"@en .
+
+core:calendar a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Calendar"@en .
+
+core:calendar-event a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Calendar event"@en .
+
+core:interaction a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Interaction"@en .

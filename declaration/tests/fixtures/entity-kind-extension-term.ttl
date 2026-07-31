@@ -1,0 +1,29 @@
+# SYNTHETIC, not a real connector. Exercises contreforts/contreforts-workspace#83 (E2) "What to
+# build" item 2 / "Done when": `EntityKind` is an OPEN newtype (contreforts-core#18) -- core's
+# concept scheme (concepts.ttl) is authoritative for core's own 15 terms, NOT exhaustive of every
+# legal `contreforts:entityKind` value. `ektest:RiskScenario` names `"risk-scenario"`, a term that
+# is not, and must never become by accident, one of the 15 `EntityKind::CORE_TERMS` /
+# `concepts.ttl` concepts -- a connector minting it is exercising the escape hatch
+# `EntityKind::new` exists for, not doing anything wrong. This file must validate clean both
+# before and after concepts.ttl lands; nothing in E2 may turn this into a closed-world check.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix ektest:       <https://contreforts.ds-labs.org/ontologies/entity-kind-extension-test#> .
+
+ektest:ExtensionConnectorShape a sh:NodeShape ;
+    sh:targetClass ektest:ExtensionConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path ektest:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .
+
+ektest:RiskScenario a rdfs:Class ;
+    rdfs:label "Risk scenario" ;
+    rdfs:comment "SYNTHETIC test-only entity class naming an extension EntityKind term -- not one of core's 15." ;
+    contreforts:entityKind "risk-scenario" .

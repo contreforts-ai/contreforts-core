@@ -89,6 +89,34 @@ impl EntityKind {
     pub const CALENDAR_EVENT: Self = Self(Cow::Borrowed("calendar-event"));
     pub const INTERACTION: Self = Self(Cow::Borrowed("interaction"));
 
+    /// All 15 of core's own terms, enumerable from Rust.
+    ///
+    /// Made `pub` by `contreforts/contreforts-workspace#83` (phase E / E2): core now ships a
+    /// canonical SKOS concept scheme (`concepts.ttl`, in `contreforts-declaration`) whose
+    /// concept set must equal this list's `as_str()` values exactly, checked by
+    /// `contreforts-kg`'s `core_concepts_coupling` test — a comparison that can only be
+    /// non-vacuous if this list is readable from outside this crate. Previously a private
+    /// `#[cfg(test)]`-only copy inside `mod tests` below; that copy is gone now that this is
+    /// the one source of truth both this crate's own tests and `contreforts-kg`'s coupling
+    /// test read from.
+    pub const CORE_TERMS: [Self; 15] = [
+        Self::CUSTOMER,
+        Self::CONTACT,
+        Self::INVOICE,
+        Self::COMPANY,
+        Self::CUSTOMER_GROUP,
+        Self::TERRITORY,
+        Self::PROJECT,
+        Self::ISSUE,
+        Self::ITEM,
+        Self::QUOTATION,
+        Self::MEETING,
+        Self::RESOLUTION,
+        Self::CALENDAR,
+        Self::CALENDAR_EVENT,
+        Self::INTERACTION,
+    ];
+
     /// Construct an `EntityKind` for any term — core's own or an extension's.
     ///
     /// This is the escape hatch that keeps `EntityKind` open: a connector shipping a
@@ -180,27 +208,9 @@ mod tests {
     use super::*;
     use std::str::FromStr;
 
-    const CORE_TERMS: [EntityKind; 15] = [
-        EntityKind::CUSTOMER,
-        EntityKind::CONTACT,
-        EntityKind::INVOICE,
-        EntityKind::COMPANY,
-        EntityKind::CUSTOMER_GROUP,
-        EntityKind::TERRITORY,
-        EntityKind::PROJECT,
-        EntityKind::ISSUE,
-        EntityKind::ITEM,
-        EntityKind::QUOTATION,
-        EntityKind::MEETING,
-        EntityKind::RESOLUTION,
-        EntityKind::CALENDAR,
-        EntityKind::CALENDAR_EVENT,
-        EntityKind::INTERACTION,
-    ];
-
     #[test]
     fn core_constants_round_trip_through_as_str_and_new() {
-        for kind in CORE_TERMS {
+        for kind in EntityKind::CORE_TERMS {
             let s = kind.as_str().to_string();
             assert_eq!(EntityKind::new(s.clone()), kind);
             assert_eq!(EntityKind::new(s), kind, "as_str is stable across calls");

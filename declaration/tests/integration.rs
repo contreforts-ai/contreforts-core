@@ -21,6 +21,7 @@ const CONFIG_FIELD_VALID: &str = include_str!("fixtures/config-field-valid.ttl")
 const ENTITY_KIND_CONFLICT: &str = include_str!("fixtures/entity-kind-conflict.ttl");
 const ENTITY_KIND_TWO_CONNECTORS_SAME_VALUE: &str =
     include_str!("fixtures/entity-kind-two-connectors-same-value.ttl");
+const CORE_NS_DEFINES_CONCEPT: &str = include_str!("fixtures/core-ns-defines-concept.ttl");
 
 #[test]
 fn hardened_o365_declaration_validates_clean() {
@@ -256,6 +257,43 @@ fn real_declarations_alignment_stub_carve_out_is_not_rejected() {
             result.err().map(|v| v.to_string()).unwrap_or_default()
         );
     }
+}
+
+#[test]
+fn core_namespace_subject_that_defines_a_skos_concept_is_rejected_once_the_carve_out_tightens() {
+    // contreforts/contreforts-workspace#83 (E2), item 3: now that core ships its own canonical
+    // scheme (concepts.ttl), the alignment-stub carve-out above must close. A `core:` subject
+    // asserting `rdf:type skos:Concept` (exactly what `real_declarations_alignment_stub_carve_out
+    // _is_not_rejected` above still proves is accepted, pre-tightening) must become a D2
+    // violation once a connector is the one minting it, not core.
+    //
+    // This is the mutation-target test for the tightening itself: today, before the tightening
+    // lands, core-ns-defines-concept.ttl's `core:test-defined-concept a skos:Concept` triple is
+    // still waved through by the untightened carve-out, so `result.is_err()` below is FALSE and
+    // this test fails -- a genuine (non-compile-error) RED, proven by running it against
+    // develop's current lint::core_ns::check.
+    let result = validate(CORE_NS_DEFINES_CONCEPT);
+    assert!(
+        result.is_err(),
+        "a core:-namespaced subject asserting rdf:type skos:Concept must be rejected once the \
+         D2 carve-out tightens to 'reference, never define' -- got Ok, meaning the carve-out \
+         still accepts a connector-defined core: concept"
+    );
+    let violations = result.unwrap_err();
+    let d2: Vec<_> = violations
+        .iter()
+        .filter(|v| v.rule() == Rule::D2CoreNamespace)
+        .collect();
+    assert_eq!(
+        d2.len(),
+        1,
+        "expected exactly one D2 violation for the connector-defined core: concept, got: {violations}"
+    );
+    assert!(
+        d2[0].subject().unwrap().contains("test-defined-concept"),
+        "the violation must name the offending subject IRI; got subject {:?}",
+        d2[0].subject()
+    );
 }
 
 #[test]

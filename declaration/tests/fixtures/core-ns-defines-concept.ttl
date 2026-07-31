@@ -1,0 +1,38 @@
+# SYNTHETIC, not a real connector. Exercises contreforts/contreforts-workspace#83 (E2) item 3:
+# once core ships its own canonical `core:CoreConcepts` scheme (concepts.ttl), the D2 lint's
+# alignment-stub carve-out (src/lint/core_ns.rs) must stop accepting a connector that DEFINES a
+# `core:`-namespaced `skos:Concept`/`skos:ConceptScheme` -- the exact shape that carve-out used
+# to wave through deliberately, back when core had no scheme of its own to reference
+# (contreforts-connector-forgejo#9's finding). A connector may still REFERENCE a core concept
+# (as the object of `skos:exactMatch`/`closeMatch`/`inScheme`, see
+# core-ns-references-concept-only.ttl-shaped assertions inside the real fixtures once they drop
+# their own stubs) -- it may just no longer mint one itself.
+#
+# `core:test-defined-concept` is deliberately NOT one of the 15 real EntityKind terms, so this
+# fixture cannot be confused with a legitimate use of core's real scheme -- the only thing wrong
+# here is that a connector-authored file asserts `rdf:type skos:Concept` on a `core:` subject at
+# all.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:         <http://www.w3.org/2004/02/skos/core#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix synth:        <https://contreforts.ds-labs.org/ontologies/synthetic-test#> .
+@prefix core:         <https://contreforts.ds-labs.org/ontologies/core#> .
+
+# The pre-E2 alignment-stub shape, verbatim -- previously the sanctioned carve-out, now the
+# violation D2 must reject: a connector must not be the one defining this triple.
+core:test-defined-concept a skos:Concept ;
+    skos:inScheme core:CoreConcepts ;
+    skos:prefLabel "Test defined concept"@en .
+
+synth:SyntheticConnectorShape a sh:NodeShape ;
+    sh:targetClass synth:SyntheticConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path synth:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .
