@@ -1,5 +1,6 @@
-//! Orchestrates Part 2 (meta-shapes) and Part 3 (the D14/D2/structural
-//! lints) into the single [`crate::validate`] entry point Part 4 asks for.
+//! Orchestrates Part 2 (meta-shapes) and Part 3 (the D14/D2/structural/D15/
+//! entityKind lints) into the single [`crate::validate`] entry point Part 4
+//! asks for.
 
 use shacl_rust::parser::parse_shapes;
 use shacl_rust::rdf::read_graph_from_string;
@@ -33,8 +34,9 @@ fn violation_from_meta_shape_result(result: &ValidationResult<'_>) -> Violation 
 
 /// Validates `turtle` as a connector declaration: Part 2's meta-shapes,
 /// then the D14 (`sh:xone` cross-exclusion), D2 (`core:` namespace),
-/// structural and D15 (`contreforts:configField`) lints from Part 3, all
-/// run to completion and combined --
+/// structural, D15 (`contreforts:configField`) and entityKind
+/// (`contreforts:entityKind` duplicate-value, contreforts-kg#30) lints
+/// from Part 3, all run to completion and combined --
 /// never short-circuited on the first failure, per Part 4's requirement
 /// that both real callers (a connector's `build.rs`, and the C3
 /// aggregator's `build.rs`) see every violation, not just the first.
@@ -94,7 +96,7 @@ fn run_pipeline<T>(
         Err(v) => violations.push(v),
     }
 
-    // Part 3: the D14/D2/structural lints, over the declaration's own
+    // Part 3: the D14/D2/structural/D15 lints, over the declaration's own
     // parsed shapes.
     let own_shapes = match parse_shapes(&declaration_graph) {
         Ok(shapes) => Some(shapes),
@@ -112,6 +114,7 @@ fn run_pipeline<T>(
         violations.extend(lint::config_field::check(shapes, &declaration_graph));
     }
     violations.extend(lint::core_ns::check(&declaration_graph));
+    violations.extend(lint::entity_kind::check(&declaration_graph));
 
     if !violations.is_empty() {
         return Err(Violations::new(violations));

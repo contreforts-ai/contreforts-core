@@ -96,3 +96,40 @@ express (absence of a violation vacuously conforms), so they are enforced
 as a Rust lint, not here.""" ;
     rdfs:domain sh:PropertyShape ;
     rdfs:range xsd:string .
+
+contreforts:entityKind a rdf:Property ;
+    rdfs:label "entity kind" ;
+    rdfs:comment """Names the EntityKind::as_str() value the rdfs:Class it
+annotates is minted for, e.g. "customer" for forgejo:Organization. A class
+without this term is alignment-only documentation -- it may still exist to
+carry a skos:closeMatch/skos:exactMatch pointing at a core: concept, or
+simply to describe a shape -- and is never a synced entity's rdf:type;
+simply carries no annotation.
+
+Explicit opt-in, the same rule contreforts:configField already established:
+there is deliberately no default that falls back to the class's own local
+name or to a name-matching guess against core's EntityKind constants.
+Under a "same name by default" rule, a class whose local name happens to
+coincide with an EntityKind::as_str() value would be silently minted as
+that kind whether or not the connector actually means it; under opt-in, an
+alignment-only class simply carries no contreforts:entityKind, which is
+also the truth about it. The cost is annotating even the classes whose
+name and kind already agree -- accepted, for the same reason
+contreforts:configField accepts it: this states something (which classes
+are really typed entities, and as which kind) that exists nowhere else
+once a resolver reads it.
+
+At most once per rdfs:Class. Two rdfs:Class subjects under the same
+connector's own namespace (the class IRI's prefix up to and including its
+last '#' or '/') must never name the same contreforts:entityKind value --
+an existential rule a SHACL shape cannot express (absence of a violation
+vacuously conforms), so it is enforced as a Rust lint, not here, mirroring
+contreforts:configField rule 1 exactly. Scoped to one connector's own
+namespace, not graph-wide: two different connectors legitimately reusing
+the same EntityKind value (both minting an EntityKind::CUSTOMER document,
+say) is normal and correct, not a conflict -- only two classes within one
+connector's own vocabulary claiming the same value is ambiguous, since
+nothing would say which class a synced document's rdf:type should
+resolve to.""" ;
+    rdfs:domain rdfs:Class ;
+    rdfs:range xsd:string .

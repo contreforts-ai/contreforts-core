@@ -28,6 +28,12 @@ pub enum Rule {
     /// property shape on a node shape that already uses `configField`
     /// elsewhere must carry one too.
     D15ConfigField,
+    /// The `contreforts:entityKind` duplicate-value lint
+    /// (contreforts/contreforts-kg#30): no two `rdfs:Class` subjects under
+    /// one connector's own namespace may name the same `entityKind` value
+    /// -- see `lint::entity_kind`'s own doc comment for why the scope is
+    /// per-namespace, not graph-wide.
+    EntityKind,
 }
 
 impl fmt::Display for Rule {
@@ -39,6 +45,7 @@ impl fmt::Display for Rule {
             Rule::D2CoreNamespace => "D2 (core: namespace)",
             Rule::Structural => "structural",
             Rule::D15ConfigField => "D15 (contreforts:configField)",
+            Rule::EntityKind => "entityKind (contreforts:entityKind)",
         };
         write!(f, "{s}")
     }
@@ -89,6 +96,10 @@ impl Violation {
 
     pub fn d15_config_field(subject: Option<String>, message: impl Into<String>) -> Self {
         Self::new(Rule::D15ConfigField, subject, message)
+    }
+
+    pub fn entity_kind(subject: Option<String>, message: impl Into<String>) -> Self {
+        Self::new(Rule::EntityKind, subject, message)
     }
 
     pub fn rule(&self) -> Rule {
