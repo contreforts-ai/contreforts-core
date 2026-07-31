@@ -9,6 +9,16 @@ pub trait ContrefortsConnector: Send + Sync {
     /// Unique lowercase name identifying this adapter ("erpnext", "pennylane", …).
     fn source_name(&self) -> &str;
 
+    /// This connector's own declaration Turtle. `""` means "declares no entity
+    /// vocabulary" and keeps the connector in the silent-CORE_NS fallback (case 2).
+    ///
+    /// Lets a driver holding only `Box<dyn ContrefortsConnector>` values build a real
+    /// `EntityDeclarations` from the connectors it already holds, keyed by each
+    /// connector's own `source_name()` (contreforts-core#28).
+    fn declaration_ttl(&self) -> &'static str {
+        ""
+    }
+
     /// Pull all entities of `kind`, optionally filtered to records modified after `since`.
     async fn pull(
         &self,
