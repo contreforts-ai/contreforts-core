@@ -6,7 +6,7 @@
 //! `naive_xone_declaration_is_rejected_naming_the_missing_predicates` --
 //! without it, D14 could be written to agree with itself.
 
-use contreforts_declaration::{Rule, validate};
+use contreforts_declaration::{CONCEPTS_TTL, Rule, validate};
 
 const O365_DECLARATION: &str = include_str!("fixtures/o365-declaration.ttl");
 const O365_NAIVE_XONE: &str = include_str!("fixtures/o365-shape-naive-xone.ttl");
@@ -293,6 +293,65 @@ fn core_namespace_subject_that_defines_a_skos_concept_is_rejected_once_the_carve
         d2[0].subject().unwrap().contains("test-defined-concept"),
         "the violation must name the offending subject IRI; got subject {:?}",
         d2[0].subject()
+    );
+}
+
+#[test]
+fn every_subject_concepts_ttl_itself_defines_is_permitted_by_d2_without_hardcoding_the_scheme() {
+    // contreforts/contreforts-core#26 (corrects contreforts/contreforts-workspace#83's E2 over-
+    // broad carve-out removal, which blocks contreforts/contreforts-config-api#35): the D2 lint
+    // must permit exactly the core: subjects `CONCEPTS_TTL` itself defines, not zero of them --
+    // #35 unions `CONCEPTS_TTL` into contreforts-product's assembled `PRODUCT_GRAPH_TTL`, which
+    // makes those subjects legitimately appear in a graph D2 inspects, and today's D2 (any
+    // core:-namespaced subject at all, no exception) rejects every one of them.
+    //
+    // This test never names an individual concept or hardcodes a count: it parses
+    // `contreforts_declaration::CONCEPTS_TTL` itself, AT TEST TIME, so a 16th concept added to
+    // concepts.ttl tomorrow is covered by this exact, unmodified test the next time it runs --
+    // proving the permitted set tracks the scheme rather than a frozen copy of it, the same
+    // coupling `contreforts-kg/tests/core_concepts_coupling.rs` already guards on the Rust side.
+    // Confirmed RED against today's (pre-#26) lint::core_ns::check before this fix: 16 D2
+    // violations, one per core:-namespaced subject concepts.ttl defines (core:CoreConcepts plus
+    // its 15 concepts) -- not a compile error, a genuine behavioural failure.
+    let concepts_graph = shacl_rust::rdf::read_graph_from_string(CONCEPTS_TTL, "turtle")
+        .expect("contreforts-declaration's own concepts.ttl must parse as Turtle");
+    let concept_subject_count = concepts_graph
+        .iter()
+        .filter_map(|t| match t.subject {
+            oxigraph::model::NamedOrBlankNodeRef::NamedNode(n) => Some(n.as_str().to_string()),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    assert!(
+        concept_subject_count > 0,
+        "concepts.ttl must define at least one subject, or this test would vacuously pass"
+    );
+
+    // A synthetic declaration that reproduces CONCEPTS_TTL's own triples verbatim, alongside an
+    // otherwise-valid minimal shape (the structural lint requires at least one sh:NodeShape
+    // carrying sh:targetClass) -- exactly the "a connector restates core's scheme verbatim"
+    // case the issue's own text says is accepted and deliberately not defended against, since a
+    // graph-scoped lint cannot distinguish who authored a given triple.
+    let declaration_with_concepts_scheme = format!("{SYNTHETIC_MINIMAL}\n{CONCEPTS_TTL}");
+    let result = validate(&declaration_with_concepts_scheme);
+    let d2_violations: Vec<&contreforts_declaration::Violation> = match &result {
+        Ok(_) => Vec::new(),
+        Err(violations) => violations
+            .iter()
+            .filter(|v| v.rule() == Rule::D2CoreNamespace)
+            .collect(),
+    };
+    assert!(
+        d2_violations.is_empty(),
+        "every one of concepts.ttl's own {concept_subject_count} subject(s) must be permitted \
+         by D2 -- got D2 violation(s): {d2_violations:?}"
+    );
+    assert!(
+        result.is_ok(),
+        "a declaration reproducing concepts.ttl's own triples verbatim, alongside an otherwise-\
+         valid minimal shape, must validate cleanly once D2 permits core's own scheme; got: {}",
+        result.err().map(|v| v.to_string()).unwrap_or_default()
     );
 }
 
