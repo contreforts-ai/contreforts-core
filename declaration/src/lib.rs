@@ -74,13 +74,16 @@ pub use error::{Rule, Violation, Violations};
 pub use model::{Declaration, DeclarationVariant, PropertyShape};
 pub use validate::{declarations, validate};
 
-/// The declaration vocabulary (Part 1): four terms in
+/// The declaration vocabulary (Part 1): five terms in
 /// `https://contreforts.ds-labs.org/ontologies/declaration#` --
 /// `contreforts:secret`, `contreforts:category`, `contreforts:uiShape`,
-/// and `contreforts:configField` (the fourth, added by
-/// contreforts/contreforts-core#16, D15). Embedded so a caller can inspect
-/// or re-serve it without a filesystem dependency on this crate's source
-/// layout.
+/// `contreforts:configField` (the fourth, added by
+/// contreforts/contreforts-core#16, D15), and `contreforts:entityKind`
+/// (the fifth, added by contreforts/contreforts-kg#30: names the
+/// `EntityKind::as_str()` value an `rdfs:Class` is minted for, the same
+/// "explicit opt-in, absence is meaningful" rule D15 already established).
+/// Embedded so a caller can inspect or re-serve it without a filesystem
+/// dependency on this crate's source layout.
 pub const VOCABULARY_TTL: &str = include_str!("vocabulary.ttl");
 
 /// The meta-shapes (Part 2): the SHACL shapes a connector declaration's
@@ -94,8 +97,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vocabulary_defines_exactly_the_four_terms() {
-        for term in ["secret", "category", "uiShape", "configField"] {
+    fn vocabulary_defines_exactly_the_five_terms() {
+        for term in ["secret", "category", "uiShape", "configField", "entityKind"] {
             assert!(
                 VOCABULARY_TTL.contains(&format!("contreforts:{term} a rdf:Property")),
                 "vocabulary.ttl should define contreforts:{term}"

@@ -18,6 +18,9 @@ const CONFIG_FIELD_CONFLICT: &str = include_str!("fixtures/config-field-conflict
 const CONFIG_FIELD_SECRET_WITHOUT_FIELD: &str =
     include_str!("fixtures/config-field-secret-without-field.ttl");
 const CONFIG_FIELD_VALID: &str = include_str!("fixtures/config-field-valid.ttl");
+const ENTITY_KIND_CONFLICT: &str = include_str!("fixtures/entity-kind-conflict.ttl");
+const ENTITY_KIND_TWO_CONNECTORS_SAME_VALUE: &str =
+    include_str!("fixtures/entity-kind-two-connectors-same-value.ttl");
 
 #[test]
 fn hardened_o365_declaration_validates_clean() {
@@ -406,5 +409,95 @@ fn violations_display_is_panic_ready() {
     assert!(
         rendered.lines().count() > 1,
         "should render one line per violation plus a header"
+    );
+}
+
+// contreforts/contreforts-kg#30 ("What to build" item 1): the
+// contreforts:entityKind term and its lint. Mechanically identical in
+// shape to D15's contreforts:configField -- see the fixtures' own doc
+// comments for exactly what each proves and why.
+
+#[test]
+fn real_fixtures_carry_no_entity_kind_yet_and_still_validate() {
+    // Neither real fixture (forgejo-declaration.ttl, o365-declaration.ttl,
+    // this crate's own D14 test data -- NOT the live connector repos'
+    // declaration.ttl, which already carry contreforts:entityKind as of
+    // contreforts-connector-forgejo#14/contreforts-connector-o365#10,
+    // ahead of this term's own vocabulary.ttl definition landing here)
+    // uses contreforts:entityKind at all. Absence must be legal, mirroring
+    // D15's own `real_declarations_carry_no_config_field_yet_and_still_validate`
+    // above. Unlike that test, this one is already true today without any
+    // lint change -- validate() runs no entityKind check yet at all -- so
+    // it is not itself a RED test; it is a regression pin, run here so a
+    // future change to the new lint that starts misfiring on these two
+    // real fixtures fails a test whose name says exactly what broke.
+    for (label, ttl) in [("o365", O365_DECLARATION), ("forgejo", FORGEJO_DECLARATION)] {
+        let result = validate(ttl);
+        assert!(
+            result.is_ok(),
+            "{label}'s fixture (no contreforts:entityKind annotations at all) must still \
+             validate clean once the entityKind duplicate lint is wired in; got: {}",
+            result.err().map(|v| v.to_string()).unwrap_or_default()
+        );
+    }
+}
+
+#[test]
+fn duplicate_entity_kind_within_one_connector_namespace_is_rejected_naming_both_classes() {
+    let result = validate(ENTITY_KIND_CONFLICT);
+    assert!(
+        result.is_err(),
+        "two rdfs:Class subjects in the same connector's own namespace naming the same \
+         contreforts:entityKind value must be rejected -- it is ambiguous which class a \
+         synced document's rdf:type should resolve to, and \
+         EntityDeclarations::resolve_class_iri (contreforts-kg) silently overwrites on \
+         exactly this fact pattern today"
+    );
+    let violations = result.unwrap_err();
+    let entity_kind: Vec<_> = violations
+        .iter()
+        .filter(|v| v.rule() == Rule::EntityKind)
+        .collect();
+    assert_eq!(
+        entity_kind.len(),
+        1,
+        "expected exactly one duplicate-entityKind violation, got: {violations}"
+    );
+
+    let rendered = violations.to_string();
+    for needle in ["PrimaryAccount", "SecondaryAccount", "\"customer\""] {
+        assert!(
+            rendered.contains(needle),
+            "rejection message must name both offending classes and the shared value; \
+             missing {needle:?} in:\n{rendered}"
+        );
+    }
+
+    println!("duplicate-entityKind rejection message:\n{rendered}");
+}
+
+#[test]
+fn same_entity_kind_value_across_two_different_connectors_is_not_rejected() {
+    // The non-vacuous-scope proof: a naively graph-wide duplicate check
+    // (mirroring lint::core_ns's own graph-wide style -- correct for D2,
+    // wrong here) would reject this file, since
+    // contreforts-config-api/src/routes/product_graph.rs:83 calls
+    // contreforts_declaration::declarations() against
+    // contreforts_product::PRODUCT_GRAPH_TTL -- the union of every enabled
+    // connector's own declaration -- and declarations() shares validate()'s
+    // own Part-3 lint pipeline over that WHOLE unioned graph before ever
+    // splitting per connector shape (validate.rs's run_pipeline). Two
+    // different connectors legitimately reusing the same
+    // contreforts:entityKind value (both minting an EntityKind::CUSTOMER
+    // document) must validate clean; only a conflict WITHIN one
+    // connector's own namespace (entity-kind-conflict.ttl, above) is the
+    // bug this lint exists to catch.
+    let result = validate(ENTITY_KIND_TWO_CONNECTORS_SAME_VALUE);
+    assert!(
+        result.is_ok(),
+        "two different connectors' own classes sharing one contreforts:entityKind value \
+         must NOT be rejected -- only a conflict within one connector's own namespace is a \
+         bug; got: {}",
+        result.err().map(|v| v.to_string()).unwrap_or_default()
     );
 }
