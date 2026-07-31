@@ -14,6 +14,21 @@ use crate::model::{self, Declaration};
 
 const META_SHAPES_TTL: &str = include_str!("meta_shapes.ttl");
 
+/// Core's canonical SKOS concept scheme (contreforts/contreforts-workspace#83, E2). Unioned
+/// into [`run_meta_shapes`]'s own data graph, alongside the declaration graph, so a
+/// connector's `skos:exactMatch core:customer` resolves against a real `skos:Concept`
+/// definition instead of a stub the connector wrote itself.
+///
+/// Deliberately NOT unioned into `run_pipeline`'s own `declaration_graph` variable: that graph
+/// is also what `lint::core_ns::check` and `lint::entity_kind::check` (Part 3) run against, and
+/// neither is unioned with anything else (verified by reading this file end to end before
+/// wiring this in -- contreforts/contreforts-workspace#83's own instruction). If core's 15
+/// concept-defining triples reached that graph, they would look exactly like a connector
+/// defining a `core:`-namespaced `skos:Concept`, and the D2 carve-out tightened by this same
+/// issue (reject a `core:` subject that is DEFINED, not just referenced) would reject every
+/// declaration outright.
+const CONCEPTS_TTL: &str = include_str!("concepts.ttl");
+
 fn violation_from_meta_shape_result(result: &ValidationResult<'_>) -> Violation {
     let focus = result.focus_node().to_string();
     let mut message = if !result.messages().is_empty() {
@@ -146,17 +161,34 @@ fn run_meta_shapes(
         ))
     })?;
 
+    let concepts_graph = read_graph_from_string(CONCEPTS_TTL, "turtle").map_err(|e| {
+        Violation::structural(format!(
+            "the crate's own concepts.ttl failed to parse -- this is a bug in \
+             contreforts-declaration itself, not in the declaration being validated: {e}"
+        ))
+    })?;
+
+    // The data graph for THIS validation only: the declaration plus core's own concept
+    // scheme, so a connector's skos:exactMatch/closeMatch/inScheme resolves against a real
+    // skos:Concept. `declaration_graph` itself is left untouched -- Part 3's `core_ns` and
+    // `entity_kind` lints (run_pipeline, below) must never see concepts.ttl's own triples, or
+    // core's 15 concepts would look like a connector-defined core: subject. See CONCEPTS_TTL's
+    // own doc comment above for why.
+    let mut data_graph = declaration_graph.clone();
+    for triple in concepts_graph.iter() {
+        data_graph.insert(triple);
+    }
+
     // Cloned, not moved: `meta_shapes` above borrows `meta_shapes_graph`,
     // and both it and the dataset need to be alive at once for
     // `shacl_validate` below (mirrors the spike's own
     // `ValidationDataset::from_graphs(data_graph, shapes_graph.clone())`).
     let dataset =
-        ValidationDataset::from_graphs(declaration_graph.clone(), meta_shapes_graph.clone())
-            .map_err(|e| {
-                Violation::structural(format!(
-                    "failed to build the meta-shapes validation dataset: {e}"
-                ))
-            })?;
+        ValidationDataset::from_graphs(data_graph, meta_shapes_graph.clone()).map_err(|e| {
+            Violation::structural(format!(
+                "failed to build the meta-shapes validation dataset: {e}"
+            ))
+        })?;
 
     let report = shacl_validate(&dataset, &meta_shapes);
     Ok(report

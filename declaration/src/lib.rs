@@ -92,6 +92,23 @@ pub const VOCABULARY_TTL: &str = include_str!("vocabulary.ttl");
 /// what ran.
 pub const META_SHAPES_TTL: &str = include_str!("meta_shapes.ttl");
 
+/// Core's own canonical SKOS concept scheme (contreforts/contreforts-workspace#83, phase E /
+/// E2): `core:CoreConcepts`, a `skos:ConceptScheme`, plus exactly one `skos:Concept` per one of
+/// `EntityKind`'s 15 associated constants (core's own `models.rs`, unreachable from this crate --
+/// see this file's own module doc comment on the deliberate non-dependency between
+/// `contreforts-declaration` and `contreforts-core`). [`validate`] unions this into the Part 2
+/// meta-shapes validation graph internally, exactly as [`META_SHAPES_TTL`] is -- never into the
+/// plain declaration graph the D2 (`lint::core_ns`) and entityKind (`lint::entity_kind`) lints
+/// see, or core's own 15 concepts would look like a connector defining them. Exposed here so a
+/// caller (or this crate's own tests, and `contreforts-kg`'s cross-crate coupling test) can
+/// inspect exactly what it contains.
+///
+/// Authoritative for core's own 15 terms, not exhaustive of every legal
+/// `contreforts:entityKind` value -- `EntityKind` is an open newtype
+/// (contreforts-core#18); a connector minting a term this scheme has no concept for is legal,
+/// not a violation.
+pub const CONCEPTS_TTL: &str = include_str!("concepts.ttl");
+
 #[cfg(test)]
 mod tests {
     use super::*;

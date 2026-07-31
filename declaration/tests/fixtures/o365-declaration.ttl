@@ -43,16 +43,21 @@
 @prefix sh:     <http://www.w3.org/ns/shacl#> .
 @prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
 
-# Core's shared concept scheme, per D2. contreforts-core#11 has not landed —
-# these two concepts are reproduced here, minimally, only as alignment
-# targets so this file is reviewable standalone. A real connector crate
-# would not define these; it would import core's scheme. Unlike Forgejo's
-# core:Customer/core:Project/core:Issue (ERPNext-flavoured labels an
-# extension's own terms are aligned *to*), core:Calendar and
-# core:CalendarEvent are *already* the generic, connector-agnostic names —
-# EntityKind::Calendar/CalendarEvent (contreforts-core/src/models.rs:24-25)
-# were never ERPNext concepts to begin with. See the report, Q4-equivalent
-# ("SKOS alignment, the easy case for real this time").
+# Core's shared concept scheme, per D2. Used only in object position below
+# (skos:exactMatch alignment targets) -- since contreforts/contreforts-workspace#83 (E2),
+# core ships this scheme itself (contreforts-declaration's concepts.ttl / CONCEPTS_TTL), so
+# this file no longer reproduces core:CoreConcepts/core:calendar/core:calendar-event as its
+# own subjects; the D2 lint's alignment-stub carve-out that used to sanction that
+# reproduction has closed (lint/core_ns.rs).
+#
+# RECONCILED (contreforts/contreforts-workspace#83, "Reconcile the drifted fixture"): this
+# file previously reproduced the stub as `core:Calendar`/`core:CalendarEvent` (CamelCase),
+# left behind when contreforts-core#18 settled `EntityKind::as_str()` on lowercase-kebab and
+# the live `contreforts-connector-o365/declaration.ttl` was updated to match
+# (`core:calendar`/`core:calendar-event`) but this frozen fixture was not. The two
+# `skos:exactMatch` alignment targets below are now lowercase-kebab, matching both the live
+# declaration and core's real concepts.ttl exactly -- not a deliberate divergence, a fixed
+# drift.
 @prefix core:   <https://contreforts.ds-labs.org/ontologies/core#> .
 
 # This connector's own namespace, modelled on CORE_NS's shape, per D2 and
@@ -62,23 +67,6 @@
 # Terms invented for #23's Forgejo spike. Reused verbatim here — see the
 # report for whether O365 needed any more.
 @prefix contreforts: <https://contreforts.ds-labs.org/ontologies/declaration#> .
-
-
-########################################################################
-# 0. Assumed core concept scheme (NOT part of this connector's declaration;
-#    reproduced only so skos:exactMatch below has a target)
-########################################################################
-
-core:CoreConcepts a skos:ConceptScheme ;
-    rdfs:label "Contreforts core concepts" .
-
-core:Calendar a skos:Concept ;
-    skos:inScheme core:CoreConcepts ;
-    skos:prefLabel "Calendar"@en .
-
-core:CalendarEvent a skos:Concept ;
-    skos:inScheme core:CoreConcepts ;
-    skos:prefLabel "Calendar event"@en .
 
 
 ########################################################################
@@ -138,7 +126,7 @@ calendar_to_doc).""" ;
     # core:Issue were — O365 is one of the two connectors this core variant
     # exists for (CalDAV is the other, sharing the same category() value,
     # "calendar", config_graph.rs:345). There is no semantic gap to bridge.
-    skos:exactMatch core:Calendar .
+    skos:exactMatch core:calendar .
 
 o365:Event a rdfs:Class ;
     rdfs:label "O365 event" ;
@@ -151,7 +139,7 @@ carries _calendar_id, _calendar_name, start_datetime and end_datetime,
 injected on top of the raw Graph API payload — see the report's
 "what could not be expressed" section, same Document.fields gap Forgejo's
 spike already found.""" ;
-    skos:exactMatch core:CalendarEvent .
+    skos:exactMatch core:calendar-event .
 
 
 ########################################################################

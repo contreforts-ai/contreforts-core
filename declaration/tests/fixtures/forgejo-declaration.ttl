@@ -35,10 +35,13 @@
 @prefix sh:     <http://www.w3.org/ns/shacl#> .
 @prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
 
-# Core's shared concept scheme, per D2. contreforts-core#11 has not landed —
-# these three concepts are reproduced here, minimally, only as alignment
-# targets so this file is reviewable standalone. A real connector crate would
-# not define these; it would import core's scheme.
+# Core's shared concept scheme, per D2. Used only in object position below
+# (skos:closeMatch/exactMatch alignment targets) -- since
+# contreforts/contreforts-workspace#83 (E2), core ships this scheme itself
+# (contreforts-declaration's concepts.ttl / CONCEPTS_TTL), so this file no
+# longer reproduces core:CoreConcepts/core:Customer/core:Project/core:Issue
+# as its own subjects; the D2 lint's alignment-stub carve-out that used to
+# sanction that reproduction has closed (lint/core_ns.rs).
 @prefix core:   <https://contreforts.ds-labs.org/ontologies/core#> .
 
 # This connector's own namespace (D2: "extension terms live in the
@@ -50,27 +53,6 @@
 # Terms invented for this spike because SHACL Core and SKOS had nothing to
 # offer. Every term under this prefix is a finding — see the report.
 @prefix contreforts: <https://contreforts.ds-labs.org/ontologies/declaration#> .
-
-
-########################################################################
-# 0. Assumed core concept scheme (NOT part of this connector's declaration;
-#    reproduced only so skos:closeMatch/exactMatch below have a target)
-########################################################################
-
-core:CoreConcepts a skos:ConceptScheme ;
-    rdfs:label "Contreforts core concepts" .
-
-core:Customer a skos:Concept ;
-    skos:inScheme core:CoreConcepts ;
-    skos:prefLabel "Customer"@en .
-
-core:Project a skos:Concept ;
-    skos:inScheme core:CoreConcepts ;
-    skos:prefLabel "Project"@en .
-
-core:Issue a skos:Concept ;
-    skos:inScheme core:CoreConcepts ;
-    skos:prefLabel "Issue"@en .
 
 
 ########################################################################
