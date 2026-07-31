@@ -158,10 +158,16 @@ mod tests {
     /// Pins contreforts-core#28's supply seam: `declaration_ttl()`'s default must be the empty
     /// string, so a connector that does not override it (`NarrowConnector`, standing in for any
     /// third-party connector that predates this method or simply never declares vocabulary)
-    /// behaves byte-identically to today -- a true no-op, not merely "doesn't error". This is
-    /// currently a compile error (`declaration_ttl` does not exist on `ContrefortsConnector`
-    /// yet), which is the sanctioned RED per contreforts-kg/CONTRIBUTING.md#3: "a compile error
-    /// against a not-yet-existing symbol counts."
+    /// behaves byte-identically to today -- a true no-op, not merely "doesn't error".
+    ///
+    /// CORRECTED 2026-08-01 (contreforts-kg#45, reported via kg#45's comments 2026-07-31 while
+    /// verifying contreforts-core#28): this paragraph used to end with "This is currently a
+    /// compile error (`declaration_ttl` does not exist on `ContrefortsConnector` yet), which is
+    /// the sanctioned RED per contreforts-kg/CONTRIBUTING.md#3". That was true when a1 wrote it
+    /// for this method's RED phase and false the moment a2 implemented `declaration_ttl` (`:18`
+    /// above, eighteen lines above this comment) in the same chain -- contreforts-core#29 merged
+    /// with the claim left unrevised. `declaration_ttl` exists today; this test now exercises a
+    /// real default, not a compile failure.
     ///
     /// Mutation-proof: if the default were ever anything other than `""` (e.g. some sentinel, or
     /// `None`-like placeholder text), this assertion -- comparing against the literal empty
