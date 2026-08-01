@@ -16,13 +16,14 @@
 
 use std::collections::HashMap;
 
+use oxigraph::model::vocab::{rdf, rdfs};
 use oxigraph::model::{NamedNodeRef, NamedOrBlankNodeRef, TermRef};
 use oxigraph::store::Store;
 use shacl_rust::Shape;
 use shacl_rust::core::constraints::{Constraint, NodeKind};
 use shacl_rust::core::path::PathElement;
 use shacl_rust::core::target::Target;
-use shacl_rust::utils::{get_boolean_value, get_string_value};
+use shacl_rust::utils::{get_boolean_value, get_integer_value, get_string_value};
 use shacl_rust::vocab::sh;
 
 use crate::error::Violation;
@@ -226,6 +227,50 @@ pub struct DeclarationVariant {
     pub properties: Vec<PropertyShape>,
 }
 
+/// One `sh:PropertyGroup` referenced by `sh:group` on a connector's own
+/// top-level property shapes (contreforts/contreforts-core#33, phase F
+/// item W2). Resolved against the graph for its own `rdfs:label` and
+/// `sh:order` the same way `category`/`ui_shape`/`config_field` already
+/// are -- a direct predicate read off a known subject
+/// (`shacl_rust::utils::get_string_value`/`get_integer_value`), not
+/// SPARQL. `presentation_by_node`'s existing SPARQL query is what
+/// surfaces *which* IRI a property's own `sh:group` names in the first
+/// place (unchanged by this addition; see that function's own doc
+/// comment) -- this type is what that IRI resolves to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupDescriptor {
+    /// The `sh:PropertyGroup`'s IRI, as a bare IRI (matching `category`/
+    /// `target_class` elsewhere in this module), not oxigraph's bracketed
+    /// term syntax.
+    pub iri: String,
+    /// The group's own `rdfs:label`. `None` when it declares none (the
+    /// totality case: a group typed `a sh:PropertyGroup` with no
+    /// presentation text at all -- see
+    /// `synthetic-minimal-declaration.ttl`'s `synth:ConnectionGroup`).
+    pub label: Option<String>,
+    /// The group's own `sh:order`. `None` when it declares none.
+    ///
+    /// `shacl_rust::utils::get_integer_value` returns `Option<i32>`, but
+    /// this field is `Option<i64>` to match `PropertyShape::order`
+    /// (populated via SPARQL, which parses the literal straight to
+    /// `i64`). Widened with `i64::from` rather than re-read as a raw
+    /// literal a second time: `i32 -> i64` is total and lossless, unlike
+    /// `PropertyShape::min_length`'s `u32::try_from`, which guards a real
+    /// narrowing that can fail. Recorded here per the issue's own
+    /// "Unsettled" item 1, rather than left to drift silently.
+    pub order: Option<i64>,
+    /// `false` when this IRI is referenced by an `sh:group` but never
+    /// itself typed `a sh:PropertyGroup` anywhere in the graph -- a
+    /// dangling reference. Before this field existed, such a reference
+    /// left no trace anywhere in `Declaration` at all: exactly the
+    /// "absence presenting as success" defect class this epic exists to
+    /// close (contreforts/contreforts-workspace#19, comment 6689). `true`
+    /// for every one of the 17 real `sh:PropertyGroup` subjects tree-wide
+    /// today; only `declaration/tests/fixtures/dangling-group-reference.ttl`
+    /// (synthetic) exercises `false`.
+    pub declared: bool,
+}
+
 /// A connector's self-description, once it has passed meta-shape
 /// validation and the D14/D2 lints.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -249,6 +294,35 @@ pub struct Declaration {
     /// only non-trivial field carries its own `contreforts:uiShape`
     /// instead (see that field on `PropertyShape`).
     pub ui_shape: Option<String>,
+    /// The node shape's own `sh:name`, falling back to `rdfs:label` when
+    /// `sh:name` is absent (contreforts/contreforts-core#33, phase F item
+    /// W2) -- exactly `shacl_rust`'s own precedence for `Shape.name`
+    /// (`apply_common_shape_properties`, shacl-rust-0.2.9
+    /// `src/parser/mod.rs:110-114`), read straight off the already-parsed
+    /// typed `Shape`, not via a second graph read or SPARQL. `None` for
+    /// every connector node shape on disk today (all seven carry
+    /// neither); W3 (gated on this issue) is what adds `rdfs:label` to
+    /// them, and `sh:name` would win over it if a future declaration ever
+    /// carried both (see `declaration/tests/fixtures/node-shape-name-vs-label.ttl`).
+    pub label: Option<String>,
+    /// The node shape's own `sh:description`, read the same way as
+    /// `label` above (`Shape.description`, already parsed by
+    /// `shacl_rust`). `None` for every connector node shape on disk
+    /// today; W3 is what fills it in.
+    pub description: Option<String>,
+    /// Every `sh:PropertyGroup` referenced by `sh:group` on this
+    /// connector's own top-level `properties` (contreforts/
+    /// contreforts-core#33, phase F item W2), deduplicated by IRI --
+    /// never by label: only 10 distinct label strings cover the 17 real
+    /// groups tree-wide ("Connection" alone appears 6 times), so a
+    /// label-keyed set would silently under-count. Sorted by `(order,
+    /// iri)` with a `None` order sorted last, so the ordering is total
+    /// and deterministic regardless of declaration or fixture order. Does
+    /// NOT walk `variants[].properties` -- an `sh:xone` alternative's own
+    /// fields contribute no groups to this list (see
+    /// `Declaration.properties`'s own doc comment on why variants are
+    /// scoped out of the flat view).
+    pub groups: Vec<GroupDescriptor>,
     /// The connector's own top-level fields: the direct `sh:property`
     /// children of `shape`. Deliberately does NOT walk into `sh:xone`
     /// alternatives or `sh:node`-nested shapes (e.g.
@@ -372,6 +446,65 @@ fn presentation_by_node(
         }
     }
     Ok(result)
+}
+
+/// Whether `node` is itself typed `a sh:PropertyGroup` anywhere in
+/// `graph` -- `GroupDescriptor::declared`'s own check. A direct predicate
+/// read, not SPARQL: `rdf:type` is an ordinary graph lookup, the same
+/// shape as `category`/`ui_shape` elsewhere in this module.
+fn is_declared_property_group(graph: &oxigraph::model::Graph, node: NamedNodeRef<'_>) -> bool {
+    graph
+        .objects_for_subject_predicate(node, rdf::TYPE)
+        .any(|term| matches!(term, TermRef::NamedNode(n) if n == sh::PROPERTY_GROUP))
+}
+
+/// One `GroupDescriptor`, resolved against `graph` for `iri`'s own
+/// `rdfs:label`, `sh:order`, and whether it is itself typed `a
+/// sh:PropertyGroup` -- see `GroupDescriptor`'s own doc comment for why
+/// none of this needs SPARQL.
+fn build_group_descriptor(graph: &oxigraph::model::Graph, iri: &str) -> GroupDescriptor {
+    let node = NamedNodeRef::new_unchecked(iri);
+    let label = get_string_value(graph, node.into(), rdfs::LABEL);
+    let order = get_integer_value(graph, node.into(), sh::ORDER).map(i64::from);
+    let declared = is_declared_property_group(graph, node);
+    GroupDescriptor {
+        iri: iri.to_string(),
+        label,
+        order,
+        declared,
+    }
+}
+
+/// `Declaration.groups`: every distinct IRI named by `sh:group` on
+/// `properties` -- the connector's own flat, top-level field list, built
+/// before any `sh:xone` variant is even consulted, so this never sees a
+/// variant's own groups (see `Declaration.groups`'s own doc comment).
+/// Deduplicated by IRI, in first-seen order, then sorted by `(order,
+/// iri)` with a `None` order sorted last -- comparing `(order.is_none(),
+/// order, iri)` rather than deriving `Ord` on `Option<i64>` directly,
+/// because `Option`'s derived order puts `None` *first* (`None <
+/// Some(_)`), which is the wrong end (see
+/// `declaration/tests/fixtures/group-ordering-none-last.ttl`, built
+/// specifically to catch that).
+fn build_groups(
+    graph: &oxigraph::model::Graph,
+    properties: &[PropertyShape],
+) -> Vec<GroupDescriptor> {
+    let mut seen = std::collections::HashSet::new();
+    let mut groups: Vec<GroupDescriptor> = Vec::new();
+    for property in properties {
+        let Some(iri) = property.group.as_deref() else {
+            continue;
+        };
+        if !seen.insert(iri.to_string()) {
+            continue;
+        }
+        groups.push(build_group_descriptor(graph, iri));
+    }
+    groups.sort_by(|a, b| {
+        (a.order.is_none(), a.order, &a.iri).cmp(&(b.order.is_none(), b.order, &b.iri))
+    });
+    groups
 }
 
 /// A property shape's `sh:path`, when it is a single plain IRI (the only
@@ -625,6 +758,11 @@ fn build_declaration_for_shape(
 
     let category = get_string_value(graph, shape.node, CATEGORY_PREDICATE);
     let ui_shape = get_string_value(graph, shape.node, UI_SHAPE_PREDICATE);
+    // contreforts/contreforts-core#33, phase F item W2: both already parsed by shacl-rust's
+    // `apply_common_shape_properties` (sh:name falling back to rdfs:label for `label`,
+    // sh:description for `description`) -- no graph read or SPARQL needed here at all.
+    let label = shape.name.clone();
+    let description = shape.description.clone();
 
     let mut properties: Vec<PropertyShape> = shape
         .property_shapes
@@ -634,12 +772,16 @@ fn build_declaration_for_shape(
 
     let variants = build_variants(shape, graph, presentation);
     merge_variant_requiredness(&mut properties, &variants);
+    let groups = build_groups(graph, &properties);
 
     Ok(Declaration {
         shape: shape.node.to_string(),
         target_class,
         category,
         ui_shape,
+        label,
+        description,
+        groups,
         properties,
         variants,
     })
@@ -687,7 +829,14 @@ pub(crate) fn build_declaration(
     for rest in declarations {
         primary.properties.extend(rest.properties);
         primary.variants.extend(rest.variants);
+        primary.groups.extend(rest.groups);
     }
+    // Re-sort after folding in every other shape's own groups -- each `build_declaration_for_shape`
+    // call already sorted its own slice, but the fold above interleaves them back out of
+    // (order, iri) order.
+    primary.groups.sort_by(|a, b| {
+        (a.order.is_none(), a.order, &a.iri).cmp(&(b.order.is_none(), b.order, &b.iri))
+    });
     Ok(primary)
 }
 
