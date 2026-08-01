@@ -1,0 +1,42 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34), totality hole 6a: `build_property_shape`
+# (src/model.rs) opens with `let path = simple_path_iri(shape)?;`, so a
+# property whose sh:path is anything but a single plain IRI VANISHES --
+# no error, no field, no trace. Verified against shacl-rust 0.2.9 by
+# parsing this very file: the parser reports the property fine, as
+# `[Inverse(NamedNodeRef { iri: ".../owner" })]`, and `declarations()`
+# then returns a Declaration one property short, reporting Ok.
+#
+# All 65 sh:path objects tree-wide are plain IRIs today, so a count check
+# is the only way this drop can ever be noticed. `owner` below is the one
+# that must go missing: two sh:property children, one field in the result.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix inv:          <https://contreforts.ds-labs.org/ontologies/inverse-path-test#> .
+
+inv:InversePathConnectorShape a sh:NodeShape ;
+    sh:targetClass inv:InversePathConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path inv:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group inv:GeneralGroup ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        sh:path [ sh:inversePath inv:owner ] ;
+        sh:name "Owner" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:group inv:GeneralGroup ;
+        sh:order 2 ;
+    ] .
+
+inv:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

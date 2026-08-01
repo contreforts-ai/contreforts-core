@@ -1,0 +1,491 @@
+########################################################################
+# contreforts-connector-o365 — VENDORED VERBATIM, phase F item W4
+# (contreforts/contreforts-core#34).
+#
+# Everything below this header is a byte-for-byte copy of
+# crates/contreforts-connector-o365/declaration.ttl as of workspace
+# develop @ 4cf06df. See caldav-declaration.ttl's header for why this
+# crate has to vendor rather than include_str! a sibling connector.
+#
+# WHY A SECOND o365 FIXTURE, next to the o365-declaration.ttl this
+# directory has carried since contreforts-workspace#27: that file is the
+# 2026-07 SPIKE, and it has drifted from the connector in three ways that
+# matter to a form digest.
+#   1. It carries a NODE-LEVEL sh:sparql (its own "sibling-label
+#      uniqueness" constraint, at o365-declaration.ttl:327). The real
+#      connector DROPPED that constraint -- crates/contreforts-connector-o365/
+#      declaration.ttl:381 and :423-427 record the decision and its
+#      measured per-write cost. `build_variants` (src/model.rs) find_maps
+#      Constraint::Xone and nothing else, so a node-level sh:sparql
+#      reaches no code at all; W4 makes that a named error, which means
+#      the spike fixture is NOT a valid input to a happy-path digest test.
+#      `the_o365_spike_fixture_is_rejected_for_its_node_level_sh_sparql`
+#      keeps that file honest instead of quietly abandoning it.
+#   2. It carries NO contreforts:configField at all; the connector
+#      declares seven (`auth.tenant_id`, `auth.access_token`, ...).
+#   3. It carries no node-level rdfs:label / sh:description; the
+#      connector carries "Microsoft 365" and a real description (W3).
+#
+# Field set, groups and both sh:xone alternatives are otherwise identical
+# between the two files -- verified property by property with rdflib --
+# so every field-level expectation phase F's plan states against "the o365
+# fixture" holds here unchanged.
+########################################################################
+
+########################################################################
+# contreforts-connector-o365 — self-description
+#
+# contreforts/contreforts-connector-o365#7, phase C item C7 of the
+# bootstrap epic (contreforts/contreforts-workspace#20). Step 1 of 2 --
+# wiring into contreforts-product follows in contreforts-config-api.
+#
+# This file is PROMOTED, not written from scratch: it starts from
+# crates/contreforts-core/declaration/tests/fixtures/o365-declaration.ttl
+# (385 lines), the hardened, D14-clean fixture from the spike that
+# discovered D14 (contreforts/contreforts-workspace#27). That fixture's
+# namespace, sh:targetClass, contreforts:category and nine sh:paths were
+# re-verified against today's crates/contreforts-kg/src/config_graph.rs
+# (set_o365_connector/get_o365_connector) as part of this issue and still
+# match exactly -- see tests/config_declaration.rs, which exercises the
+# real round trip. contreforts-declaration's own copy of the fixture is
+# left untouched (it is that crate's D14 test data, not this connector's
+# declaration -- see this file's own tests/declaration.rs for why the two
+# need not stay identical after this point).
+#
+# TWO CHANGES from the fixture, both required by this issue and neither
+# a restatement of the fixture's own content:
+#
+#   1. The sh:sparql sibling-label-uniqueness constraint is DROPPED. See
+#      the long comment where it used to sit, in §3 below, for why -- in
+#      short: the shipped write path validates one connector instance in
+#      isolation, so the ASK this constraint runs can never see a sibling
+#      to compare against, and a constraint that can never fail must not
+#      ship as though it were doing something.
+#
+#   2. contreforts:configField is ADDED throughout (contreforts-config-
+#      api#20's dotted paths), because the fixture predates that
+#      mechanism -- see §3's field-by-field table.
+#
+# IMPORTANT CAVEAT, carried over from the fixture and still true today:
+# this file declares what contreforts-connector-o365 *would* self-describe
+# under the D1/D2/D6 design. It does NOT yet change what a live write
+# does. Today's runtime code (config_graph.rs's write_connector) mints the
+# connector's class and every field predicate under CORE_NS
+# (core:O365Connector, core:label, core:authMode, ...) UNLESS the
+# ConnectorValidator it is constructed with was built from a shapes graph
+# that declares o365:O365Connector -- and contreforts-product's build
+# script does not know this crate exists until step 2
+# (contreforts-config-api wires DECLARATION_TTL in). Until then, this
+# file is real, tested, promotable Turtle sitting in the crate, exercised
+# directly by this crate's own tests (see tests/declaration.rs's own
+# caution, matching contreforts-connector-caldav's), but not yet load-
+# bearing for a live write. Exactly the same in-between state CalDAV's
+# own declaration.ttl was in after its own step 1.
+########################################################################
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+
+# Core's shared concept scheme, per D2. Used only in object position below
+# (skos:exactMatch alignment targets) -- since contreforts/contreforts-workspace#83 (E2),
+# core ships this scheme itself (contreforts-declaration's concepts.ttl / CONCEPTS_TTL), so
+# this declaration no longer reproduces core:CoreConcepts/core:calendar/core:calendar-event
+# as its own subjects; the D2 lint's alignment-stub carve-out that used to sanction that
+# reproduction has closed (contreforts-declaration's lint/core_ns.rs) -- a connector may
+# reference a core: concept, never define one. core:calendar and core:calendar-event
+# (lowercase-kebab, EntityKind::as_str() per contreforts-core#18) are the generic,
+# connector-agnostic names -- EntityKind::Calendar/CalendarEvent
+# (contreforts-core/src/models.rs) were never ERPNext concepts to begin with, unlike
+# Forgejo's Customer/Project/Issue.
+@prefix core:   <https://contreforts.ds-labs.org/ontologies/core#> .
+
+# This connector's own namespace, modelled on CORE_NS's shape, per D2 and
+# scripts/check-namespace-consistency.py's documented convention.
+@prefix o365:   <https://contreforts.ds-labs.org/ontologies/o365#> .
+
+# The declaration vocabulary (contreforts-core#14/#16): contreforts:secret,
+# contreforts:category, contreforts:uiShape, contreforts:configField.
+# Reproduced only as a prefix (not redefined as rdf:Property triples),
+# matching forgejo's/gitlab's/stalwart's/caldav's own declaration.ttl --
+# this crate cannot depend on contreforts-declaration at build time
+# (build/dependency cycle; vocabulary.ttl is not published as a separate
+# importable Turtle asset yet). See
+# crates/contreforts-core/declaration/src/vocabulary.ttl for the
+# authoritative definitions.
+@prefix contreforts: <https://contreforts.ds-labs.org/ontologies/declaration#> .
+
+
+
+########################################################################
+# 1. Invented vocabulary
+#
+# Reused, not reinvented, from contreforts-workspace#23's Forgejo spike:
+#   - contreforts:secret    — on clientSecret, token, refreshToken (D8:
+#     none of the three may ever be served back through the config API).
+#   - contreforts:category  — "calendar" (config_graph.rs's category(),
+#     shared with CaldavConnector).
+#   - contreforts:configField — dotted runtime paths (contreforts-config-
+#     api#20), added by this issue; see §3.
+#   - contreforts:uiShape   — widened from sh:PropertyShape-only (as #23
+#     defined it) to sh:NodeShape too, carried over from the fixture: the
+#     auth union here is not one property's nested value, it is five flat
+#     predicates directly on the connector node itself (set_o365_connector
+#     never nests an "auth" object at the RDF level; it writes fields
+#     straight onto the connector's own subject, branching only in Rust),
+#     so "render this as a discriminated union" has nowhere to sit but the
+#     NodeShape that owns the sh:xone.
+########################################################################
+
+
+########################################################################
+# 2. Entity vocabulary
+#
+# connector.rs's ContrefortsConnector impl, verbatim:
+#   EntityKind::Calendar      -> O365 Calendar  (remote_id = calendar id)
+#   EntityKind::CalendarEvent -> O365 Event     (remote_id = "<calendar_id>/<event_id>")
+########################################################################
+
+o365:Calendar a rdfs:Class ;
+    rdfs:label "O365 calendar" ;
+    rdfs:comment """A Microsoft 365 calendar. Pulled via list_calendars();
+remote_id = id, name = the calendar's display name (falls back to id if
+absent). Produces EntityKind::Calendar documents (connector.rs,
+calendar_to_doc).""" ;
+    skos:exactMatch core:calendar ;
+    # contreforts-kg#30: links this declared class to the EntityKind value
+    # connector.rs actually constructs calendar_to_doc documents as, so
+    # EntityDeclarations::from_declaration_ttl can resolve a synced
+    # calendar's rdf:type to o365:Calendar instead of falling back to
+    # CORE_NS.
+    contreforts:entityKind "calendar" .
+
+o365:Event a rdfs:Class ;
+    rdfs:label "O365 event" ;
+    rdfs:comment """A calendar event. Pulled via list_all_events(); remote_id
+= "<calendar_id>/<event_id>" (event_to_doc synthesizes this from the raw
+event's own id plus an injected _calendar_id field -- there is no single API
+field holding the compound id). name = subject (falls back to "(no
+subject)"). Produces EntityKind::CalendarEvent documents.""" ;
+    skos:exactMatch core:calendar-event ;
+    contreforts:entityKind "calendar-event" .
+
+
+########################################################################
+# 3. Configuration schema
+#
+# O365ConnectorConfig (config_graph.rs): label, auth (a TAGGED UNION --
+# see set_o365_connector), user_principal (optional), customer (optional).
+#
+# O365ConnectorAuth::ClientCredentials writes {authMode="client_credentials",
+# tenantId, clientId, clientSecret}; ::Delegated writes
+# {authMode="delegated", token, refreshToken?}. All nine possible
+# predicates (label, authMode, tenantId, clientId, clientSecret, token,
+# refreshToken, userPrincipal, customer) sit FLAT on the same connector
+# subject.
+#
+# contreforts:configField, added by this issue (contreforts-config-api#20's
+# dotted paths), maps each stored predicate to the runtime path
+# contreforts-connector-o365's own O365Config (src/config.rs) reads it
+# from. Verified field by field against src/config.rs, not assumed:
+#
+#   stored          configField              note
+#   --------------  -----------------------  ----------------------------
+#   authMode        auth.type                O365Auth's serde discriminant
+#                                             field is `type`
+#                                             (#[serde(tag = "type",
+#                                             rename_all = "snake_case")]);
+#                                             the stored values
+#                                             "client_credentials"/
+#                                             "delegated" already ARE that
+#                                             rename_all's variant names,
+#                                             so this needs zero
+#                                             translation, same shape as
+#                                             CalDAV's auth.type.
+#   tenantId        auth.tenant_id           O365Auth::ClientCredentials
+#   clientId        auth.client_id           O365Auth::ClientCredentials
+#   clientSecret    auth.client_secret       O365Auth::ClientCredentials, secret
+#   token           auth.access_token        O365Auth::Delegated -- a
+#                                             genuine name mismatch
+#                                             (stored "token", runtime
+#                                             field access_token). This is
+#                                             exactly what D15 exists for:
+#                                             configField says where the
+#                                             value really lives when the
+#                                             declared name and the Rust
+#                                             field name diverge. secret.
+#   refreshToken    auth.refresh_token       O365Auth::Delegated,
+#                                             Option<String>, secret
+#   userPrincipal   user_principal           O365Config top-level field
+#   label           (none)                   identity, not configuration
+#   customer        (none)                   storage-only platform scoping
+#
+# label/customer carry no contreforts:configField, deliberately (D15):
+# O365Config (src/config.rs) has no `label` field at all -- it selects
+# which connector instance you mean, the same reasoning Forgejo's/GitLab's/
+# CalDAV's own declaration.ttl record for their own `label`. `customer` is
+# storage-only, platform-scoping data the connector's own runtime config
+# never receives, same finding as Forgejo's mapsToCustomer and CalDAV's own
+# customer field.
+#
+# The three secret fields (clientSecret, token, refreshToken) each carry
+# BOTH contreforts:secret true AND contreforts:configField, satisfying D15
+# rule 2 (once a node shape uses configField anywhere, every
+# contreforts:secret true property on it must also carry configField) --
+# verified by this crate's own tests/declaration.rs, which proves the
+# negative the same way CalDAV's does: removing a secret field's
+# configField while leaving another field's configField in place fails
+# contreforts-declaration's validate() with a named D15 violation.
+########################################################################
+
+o365:ConnectionGroup a sh:PropertyGroup ;
+    rdfs:label "Connection" ;
+    sh:order 1 .
+
+o365:AuthenticationGroup a sh:PropertyGroup ;
+    rdfs:label "Authentication" ;
+    sh:order 2 .
+
+o365:ScopeGroup a sh:PropertyGroup ;
+    rdfs:label "Scope" ;
+    sh:order 3 .
+
+o365:O365ConnectorShape a sh:NodeShape ;
+    sh:targetClass o365:O365Connector ;
+    contreforts:category "calendar" ;        # config_graph.rs, category()
+    contreforts:uiShape "discriminated-union" ;  # see §1's widened-domain note
+    rdfs:label "Microsoft 365" ;
+    sh:description "Syncs calendars and events from Microsoft 365 via the Microsoft Graph API using OAuth2." ;
+
+    # -- label (always required; identity, not configuration) --
+    sh:property [
+        sh:path o365:label ;
+        sh:name "Label" ;
+        sh:description "Short identifier for this connector instance (e.g. \"main\", \"support-calendar\"). Allows multiple O365 connectors per company." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 1 ;
+        sh:order 1 ;
+        sh:group o365:ConnectionGroup ;
+        # No contreforts:configField, deliberately (D15) -- see §3's header
+        # note. O365Config has no `label` field at all.
+    ] ;
+
+    # -- optional scope fields --
+    sh:property [
+        sh:path o365:userPrincipal ;
+        sh:name "User principal name" ;
+        sh:description "User principal name for app-level access (e.g. \"user@contoso.com\"). Leave empty when not using app-only access." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 1 ;
+        sh:group o365:ScopeGroup ;
+        contreforts:configField "user_principal" ;
+    ] ;
+    sh:property [
+        sh:path o365:customer ;
+        sh:name "Customer" ;
+        sh:description "Slug of the customer this connector is scoped to, if any." ;
+        # Stored as a bare xsd:string, not an IRI reference to the customer
+        # entity it names -- same finding as Forgejo's mapsToCustomer and
+        # CalDAV's own customer field.
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 2 ;
+        sh:group o365:ScopeGroup ;
+        # No contreforts:configField, deliberately (D15) -- see §3's header
+        # note. O365Config has no `customer` field at all.
+    ] ;
+
+    # -- authMode: the discriminator. --
+    sh:property [
+        sh:path o365:authMode ;
+        sh:name "Authentication mode" ;
+        sh:description "Selects which fields below apply: \"Client credentials\" (app-only, tenant/client/secret) or \"Delegated\" (a user's own access token)." ;
+        sh:in ( "client_credentials" "delegated" ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 1 ;
+        sh:group o365:AuthenticationGroup ;
+        contreforts:configField "auth.type" ;
+    ] ;
+
+    # -- every field either auth variant can write, so the UI has a label/
+    #    description/order for each regardless of which variant a form
+    #    generator ends up rendering. NOTE what is deliberately absent here:
+    #    no sh:minCount on any of these five. Requiredness is NOT expressed
+    #    at this flat level at all -- it lives only inside the sh:xone
+    #    alternatives below. A form generator cannot determine "is
+    #    clientSecret required?" from this property list alone; it has to
+    #    walk into sh:xone and pick the alternative matching the user's
+    #    authMode choice. --
+    sh:property [
+        sh:path o365:tenantId ;
+        sh:name "Tenant ID" ;
+        sh:description "Azure AD tenant ID. Required when Authentication mode is \"Client credentials\"." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 2 ;
+        sh:group o365:AuthenticationGroup ;
+        contreforts:configField "auth.tenant_id" ;
+    ] ;
+    sh:property [
+        sh:path o365:clientId ;
+        sh:name "Client ID" ;
+        sh:description "Azure AD application (client) ID. Required when Authentication mode is \"Client credentials\"." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 3 ;
+        sh:group o365:AuthenticationGroup ;
+        contreforts:configField "auth.client_id" ;
+    ] ;
+    sh:property [
+        sh:path o365:clientSecret ;
+        sh:name "Client secret" ;
+        sh:description "Azure AD application client secret. Required when Authentication mode is \"Client credentials\"." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 4 ;
+        sh:group o365:AuthenticationGroup ;
+        contreforts:secret true ;
+        # D15 rule 2: once this node shape uses contreforts:configField
+        # anywhere, every contreforts:secret true property on it is
+        # REQUIRED to also carry configField -- see this crate's
+        # tests/declaration.rs.
+        contreforts:configField "auth.client_secret" ;
+    ] ;
+    sh:property [
+        sh:path o365:token ;
+        sh:name "Access token" ;
+        sh:description "A delegated user's OAuth access token. Required when Authentication mode is \"Delegated\"." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 5 ;
+        sh:group o365:AuthenticationGroup ;
+        contreforts:secret true ;
+        # Genuine name mismatch: stored "token", O365Auth::Delegated's own
+        # field is `access_token`. Exactly what D15 exists for -- see §3's
+        # header table.
+        contreforts:configField "auth.access_token" ;
+    ] ;
+    sh:property [
+        sh:path o365:refreshToken ;
+        sh:name "Refresh token" ;
+        sh:description "OAuth refresh token. Optional even under \"Delegated\" mode -- O365Auth::Delegated has refresh_token: Option<String>." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 6 ;
+        sh:group o365:AuthenticationGroup ;
+        contreforts:secret true ;
+        # Same D15 rule 2 requirement as clientSecret/token, above.
+        contreforts:configField "auth.refresh_token" ;
+    ] ;
+
+    # -- the union itself. Two alternative node shapes, discriminated by
+    #    sh:in on authMode. Each alternative ALSO forbids (sh:maxCount 0)
+    #    the predicates that belong only to the OTHER variant -- D14
+    #    (contreforts-core#14), found necessary by the O365 spike
+    #    (contreforts-workspace#27): a bare sh:xone with no cross-exclusion
+    #    silently accepts an instance carrying fields from BOTH variants,
+    #    because a SHACL property shape only constrains the predicates it
+    #    mentions -- an unlisted predicate is ignored, not forbidden,
+    #    unless a shape says so. This crate's own tests/config_declaration.rs
+    #    proves both directions: the exclusions present here reject a
+    #    mixed-variant instance, and this crate's own tests/declaration.rs
+    #    proves removing one reproduces the naive (silently wrong)
+    #    behaviour. --
+    sh:xone (
+        o365:ClientCredentialsShape
+        o365:DelegatedShape
+    ) .
+
+    # -- sibling-label uniqueness: DROPPED, not promoted. --
+    #
+    # The fixture this file was promoted from carried an sh:sparql
+    # NodeShape-level constraint here, enforcing "no two O365 connectors on
+    # the same company may share a label." Its own comment claimed the
+    # ASK's dataset "sees every stored connector."
+    #
+    # That claim does not hold in the shipped write path, and this issue
+    # required verifying it independently rather than taking the fixture's
+    # word -- done, with evidence:
+    #
+    #   - ConnectorValidator::validate (contreforts-kg/src/
+    #     connector_validation.rs) builds
+    #     ValidationDataset::from_graphs(instance.clone(),
+    #     self.shapes_graph.clone()), where `instance` is exactly the graph
+    #     connector_instance_graph assembles for the ONE connector about to
+    #     be written (subject, rdf:type, its fields) -- see
+    #     config_graph.rs's own doc comment on connector_instance_graph.
+    #   - shacl-rust 0.2.9's ValidationDataset::build_store (src/
+    #     validation/dataset.rs) confirms what that dataset actually
+    #     contains at SPARQL-execution time: it loads `data` (the instance
+    #     graph handed to from_graphs) into the store's DEFAULT graph, and
+    #     `shapes_graph` into a graph named <urn:shacl:shapes-graph>. There
+    #     is no third input, and no path back to the live company/connector
+    #     store at all -- build_store never sees a GraphStore, only the two
+    #     Graph values from_graphs was given.
+    #
+    #   So a plain, graph-unqualified `$this o365:label ?label` pattern
+    #   inside sh:sparql sees exactly the one connector being validated --
+    #   never a sibling. The `?other ... FILTER (?other != $this)` half of
+    #   the original ASK can never bind, on every single call, by
+    #   construction of the dataset it runs against, not because of any
+    #   data-dependent condition. The constraint conforms always. Promoting
+    #   it unchanged would ship a constraint that cannot fail -- the same
+    #   "absence presenting as success" defect class as
+    #   contreforts-workspace#46's groupMapping.
+    #
+    #   Cross-instance constraints are not expressible in this validation
+    #   model. contreforts-kg#19 validates a write BEFORE it happens,
+    #   against the instance alone, which is what makes it a write-path
+    #   guard rather than a store audit. Uniqueness across siblings is
+    #   inherently a store-level question and needs a different mechanism
+    #   -- a pre-write query, or a store-level audit -- not a shape.
+    #
+    # See this issue's PR report for the measured sh:sparql per-write cost
+    # (with vs. without an sh:sparql constraint present), and for whether
+    # dropping it here weakens contreforts-declaration's own D14/sh:sparql
+    # test coverage -- it does not; that crate's fixture is untouched and
+    # still exercises sh:sparql on its own.
+
+o365:ClientCredentialsShape a sh:NodeShape ;
+    rdfs:comment "Alternative 1 of the auth sh:xone: O365ConnectorAuth::ClientCredentials." ;
+    sh:property [
+        sh:path o365:authMode ;
+        sh:in ( "client_credentials" ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [ sh:path o365:tenantId ;     sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path o365:clientId ;     sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path o365:clientSecret ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    # exclusion: Delegated's exclusive fields must be absent here.
+    sh:property [ sh:path o365:token ;        sh:maxCount 0 ] ;
+    sh:property [ sh:path o365:refreshToken ; sh:maxCount 0 ] .
+
+o365:DelegatedShape a sh:NodeShape ;
+    rdfs:comment "Alternative 2 of the auth sh:xone: O365ConnectorAuth::Delegated." ;
+    sh:property [
+        sh:path o365:authMode ;
+        sh:in ( "delegated" ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [ sh:path o365:token ;        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path o365:refreshToken ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    # exclusions: ClientCredentials' exclusive fields must be absent here.
+    sh:property [ sh:path o365:tenantId ;     sh:maxCount 0 ] ;
+    sh:property [ sh:path o365:clientId ;     sh:maxCount 0 ] ;
+    sh:property [ sh:path o365:clientSecret ; sh:maxCount 0 ] .

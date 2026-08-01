@@ -1,0 +1,36 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34), the other half of totality hole 5:
+# sh:deactivated, like sh:closed, is a SEPARATE FIELD on shacl-rust's
+# `Shape` (`shape.deactivated: bool`), not a member of
+# `shape.constraints` -- verified against shacl-rust 0.2.9 by parsing this
+# very file: `deactivated=true`, `constraints=[]`.
+#
+# Worse than closed: a deactivated shape is one SHACL validation ignores
+# entirely, yet `find_connector_shapes` (src/model.rs) still admits it and
+# `declarations()` still returns it as a perfectly ordinary Declaration
+# (also verified by parsing this file). A digest that trusted that would
+# generate a live config form for a connector whose own author switched
+# its validation off. Zero sh:deactivated triples exist tree-wide.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix deact:        <https://contreforts.ds-labs.org/ontologies/deactivated-shape-test#> .
+
+deact:DeactivatedConnectorShape a sh:NodeShape ;
+    sh:targetClass deact:DeactivatedConnector ;
+    contreforts:category "test-only" ;
+    sh:deactivated true ;
+    sh:property [
+        sh:path deact:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group deact:GeneralGroup ;
+        sh:order 1 ;
+    ] .
+
+deact:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

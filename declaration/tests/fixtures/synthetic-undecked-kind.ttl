@@ -1,0 +1,37 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34): FormSchema.kind is derived from the
+# sh:targetClass IRI's own namespace segment, exactly as
+# `kind_of_target_class` does at
+# crates/contreforts-config-api/src/routes/product_graph.rs -- which
+# returns None for an IRI with no '#' at all, deliberately (`split_once`,
+# not `split('#').next()`, "silently treating a fragment-less IRI as its
+# own namespace instead of reporting 'no kind derivable here'").
+#
+# All seven real sh:targetClass IRIs carry a fragment, so this case has
+# zero instances. It must be DigestError::UndeckedKind rather than a guess:
+# `kind` is the key every layer above -- the route, the webui's connector
+# picker, contreforts-config's connector_type() -- joins on, and a guessed
+# one is a form wired to the wrong connector.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix nofrag:       <https://contreforts.ds-labs.org/ontologies/undecked-kind-test#> .
+
+nofrag:UndeckedKindConnectorShape a sh:NodeShape ;
+    # No '#' anywhere in this IRI -- the whole point of the fixture.
+    sh:targetClass <https://contreforts.ds-labs.org/ontologies/undecked-kind-test/UndeckedKindConnector> ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path nofrag:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group nofrag:GeneralGroup ;
+        sh:order 1 ;
+    ] .
+
+nofrag:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

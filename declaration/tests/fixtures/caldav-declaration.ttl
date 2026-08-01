@@ -1,0 +1,415 @@
+########################################################################
+# contreforts-connector-caldav — VENDORED VERBATIM, phase F item W4
+# (contreforts/contreforts-core#34).
+#
+# Everything below this header is a byte-for-byte copy of
+# crates/contreforts-connector-caldav/declaration.ttl as of workspace
+# develop @ 4cf06df (i.e. after W3 added the node-level rdfs:label /
+# sh:description). `contreforts-declaration` deliberately depends on
+# nothing about the superproject it is nested inside (see src/lib.rs), so
+# it cannot `include_str!` a sibling connector's own file — vendoring is
+# the only way this crate's own tests can see a real declaration, exactly
+# as forgejo-declaration.ttl and o365-declaration.ttl already are.
+#
+# WHY CALDAV SPECIFICALLY, when o365 is already vendored: three things
+# only caldav has, all load-bearing for W4's digest.
+#   1. The `basic`/`bearer` sh:xone union whose flat restatement carries
+#      NO sh:minCount, so merge_variant_requiredness (src/model.rs) marks
+#      username, password AND token all required at once — three mutually
+#      exclusive fields. The digest must NOT read requiredness from that
+#      flat list. o365 shows the same defect, caldav is the one the
+#      phase-F plan states the expected VariantRules for.
+#   2. A real sh:pattern (caldav:instanceUrl) — the o365 fixture declares
+#      none at all, so Control::Text's `pattern` would otherwise be
+#      unexercised against a real declaration.
+#   3. Real contreforts:configField values (`auth.password`, `auth.type`,
+#      ...) and a real node-level rdfs:label/sh:description — the o365
+#      fixture predates all three and carries none, so without this file
+#      FieldDescriptor.config_field and FormSchema.label's non-fallback
+#      arm would only ever be exercised synthetically.
+#
+# DRIFT IS THE KNOWN COST (contreforts/contreforts-core#34, "Unsettled"
+# item 2): the vendored forgejo fixture has ALREADY drifted from the real
+# one — it carries an sh:node and a "mapping-table" uiShape that
+# crates/contreforts-connector-forgejo/declaration.ttl does not. This copy
+# is therefore pinned to a stated commit above rather than described as
+# "the caldav declaration", and no test here asserts it still matches the
+# connector's own file — this crate cannot see that file to compare.
+########################################################################
+
+########################################################################
+# contreforts-connector-caldav — self-description
+#
+# contreforts/contreforts-connector-caldav#7, phase C item C7 of the
+# bootstrap epic (contreforts/contreforts-workspace#20). Step 1 of 2 --
+# wiring into contreforts-product follows in contreforts-config-api.
+#
+# CalDAV is the first C7 connector whose declaration must model a TAGGED
+# UNION (sh:xone), and the first to use contreforts:configField's dotted
+# paths (contreforts/contreforts-config-api#20). Both mechanisms already
+# exist -- the sh:xone/D14 lint from the O365 spike
+# (contreforts/contreforts-workspace#27, contreforts-core#14) and dotted
+# configField paths from contreforts-config-api#20 -- but neither has been
+# used by a real connector before this file. This file follows the shape
+# contreforts-connector-forgejo's declaration.ttl established
+# (contreforts/contreforts-connector-forgejo#9, #12), reused by GitLab
+# (contreforts-connector-gitlab#8) and Stalwart (contreforts-connector-
+# stalwart#15): a connector's own namespace, sh:targetClass matching
+# ConnectorDescriptor::type_name, sh:path on every stored field,
+# contreforts:secret / contreforts:category / contreforts:configField as
+# needed -- PLUS the O365 spike's sh:xone-with-cross-exclusions pattern for
+# the auth union (o365-declaration.ttl in contreforts-declaration's own
+# test fixtures is the worked example this file's union section mirrors).
+#
+# Sources read (not invented):
+#   - crates/contreforts-kg/src/config_graph.rs:120-126   CaldavConnectorAuth
+#     (Basic { username, password } | Bearer { token }, serde tag = "type",
+#     rename_all = "snake_case" -- so the stored values ARE "basic"/"bearer")
+#   - crates/contreforts-kg/src/config_graph.rs:128-140   CaldavConnectorConfig
+#     (label, url, auth, calendar_home: Option<String>, customer: Option<String>)
+#   - crates/contreforts-kg/src/config_graph.rs:355        ConnectorConfig::category()
+#     -- Self::O365(_) | Self::Caldav(_) => "calendar"
+#   - crates/contreforts-kg/src/config_graph.rs:419-423    CALDAV descriptor
+#     (kind: "caldav", type_name: "CaldavConnector", singleton: false)
+#   - crates/contreforts-kg/src/config_graph.rs:1201-1225  set_caldav_connector
+#     -- the branching field set, in write order: label, instanceUrl, then
+#     EITHER (authMode="basic", username, password) OR
+#     (authMode="bearer", token), then calendarHome, customer
+#   - crates/contreforts-kg/src/config_graph.rs:1287-1326  get_caldav_connector
+#   - crates/contreforts-connector-caldav/src/config.rs    CaldavConfig
+#     { url, auth: CaldavAuth, calendar_home: Option<String> } -- note NO
+#     `customer` field here; like `label`, that is stored configuration the
+#     platform reads back out (get_customer_for_group-style scoping), not
+#     something CaldavConnector::new ever receives.
+#
+# UPDATE, contreforts/contreforts-workspace#87 (E4): the paragraph below
+# recorded a deliberate scope decision at C7 time (this issue) -- entity-
+# vocabulary alignment was out of that issue's scope, not ruled out
+# forever. E4 is exactly the follow-up rollout that scope deferred to, now
+# that E1 (contreforts-kg#30, contreforts:entityKind) and E2 (contreforts-
+# workspace#83, core's own concepts.ttl) both ship: E2 closed the core:-
+# stub/D2-tension this paragraph warns about by giving core a canonical
+# scheme to REFERENCE instead of reproduce, so §2 below adds
+# caldav:Calendar/Event as skos:exactMatch alignments to core:'s own
+# concepts -- never a core:-namespaced subject. The original paragraph is
+# left in place, historically accurate for C7, not superseded by deletion.
+#
+# ORIGINAL (C7-era) NOTE: this file declares no entity
+# vocabulary (no Calendar/CalendarEvent -> core:Calendar/CalendarEvent SKOS
+# alignment, and no core: alignment stub). This issue's own "Verified
+# inventory" and "Part 1/Part 2" sections ask only for the configuration
+# schema -- the eight set_caldav_connector fields and their sh:xone
+# structure -- not entity-class alignment, and both C7 precedents scoped
+# the same way (contreforts-connector-gitlab#8, contreforts-connector-
+# stalwart#15) confirm that is the established C7 shape: configuration
+# schema only, zero core: namespace subjects. This also sidesteps the
+# forgejo:declaration.rs-documented D2 tension around the alignment-stub
+# carve-out entirely, by not needing one.
+########################################################################
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+
+# Core's shared concept scheme, per D2. Used only in object position below
+# (skos:exactMatch alignment targets) -- since contreforts/contreforts-
+# workspace#83 (E2), core ships this scheme itself
+# (contreforts_declaration::CONCEPTS_TTL), so this declaration does not
+# reproduce core:CoreConcepts/core:calendar/core:calendar-event as its own
+# subjects; lint/core_ns.rs (contreforts-core#26) now permits only core's
+# own scheme as a core: namespace subject.
+@prefix core:   <https://contreforts.ds-labs.org/ontologies/core#> .
+
+# This connector's own namespace (D2: extension terms live in the
+# extension's own namespace, never under shared core:). Same shape as
+# CORE_NS, forgejo:, gitlab:, o365: (".../ontologies/<name>#").
+@prefix caldav: <https://contreforts.ds-labs.org/ontologies/caldav#> .
+
+# The declaration vocabulary (contreforts-core#14/#16): contreforts:secret,
+# contreforts:category, contreforts:configField. Not reinvented here --
+# these are the same terms forgejo's/gitlab's/stalwart's declaration.ttl
+# use, reproduced only as a prefix (not redefined as rdf:Property triples;
+# matching gitlab's and stalwart's own files) because this crate cannot
+# depend on contreforts-declaration at build time (build/dependency cycle
+# -- vocabulary.ttl is not published as a separate importable Turtle asset
+# yet). See crates/contreforts-core/declaration/src/vocabulary.ttl for the
+# authoritative definitions.
+@prefix contreforts: <https://contreforts.ds-labs.org/ontologies/declaration#> .
+
+
+########################################################################
+# 2. Entity vocabulary
+#
+# contreforts/contreforts-workspace#87 (E4). connector.rs's dispatch
+# (pull/get, connector.rs:44-90), verbatim:
+#   EntityKind::CALENDAR       -> calendar_to_doc (connector.rs:173-184)
+#   EntityKind::CALENDAR_EVENT -> event_to_doc     (connector.rs:191-215)
+# Identical two kinds to O365's own -- both are CalDAV/WebDAV-family
+# calendar protocols -- so this section mirrors o365-declaration.ttl's §2
+# shape exactly, including class names.
+########################################################################
+
+caldav:Calendar a rdfs:Class ;
+    rdfs:label "CalDAV calendar" ;
+    rdfs:comment """A CalDAV calendar collection. Pulled via calendar-home
+discovery; remote_id = href, name = displayname (falls back to href if
+absent). Produces EntityKind::CALENDAR documents (connector.rs:173-184,
+calendar_to_doc).""" ;
+    skos:exactMatch core:calendar ;
+    # contreforts-kg#30: links this declared class to the EntityKind value
+    # connector.rs actually constructs calendar_to_doc documents as, so
+    # EntityDeclarations::from_declaration_ttl can resolve a synced
+    # calendar's rdf:type to caldav:Calendar instead of falling back to
+    # CORE_NS.
+    contreforts:entityKind "calendar" .
+
+caldav:Event a rdfs:Class ;
+    rdfs:label "CalDAV event" ;
+    rdfs:comment """A calendar event (VEVENT). Pulled per calendar;
+remote_id = "<calendar_href>/<uid>" (event_to_doc synthesizes this from the
+raw event's own uid plus an injected _calendar_href field -- there is no
+single iCalendar field holding the compound id). name = summary (falls
+back to "(no summary)"). Produces EntityKind::CALENDAR_EVENT documents.""" ;
+    skos:exactMatch core:calendar-event ;
+    contreforts:entityKind "calendar-event" .
+
+
+########################################################################
+# 3. Configuration schema
+#
+# CaldavConnectorConfig (config_graph.rs:128-140) has eight stored fields
+# once the auth union is flattened out: label, instanceUrl, authMode,
+# username, password, token, calendarHome, customer. set_caldav_connector
+# always writes label/instanceUrl, branches on config.auth to write EITHER
+# (authMode="basic", username, password) OR (authMode="bearer", token), and
+# always writes calendarHome/customer (both Option, so absent when None).
+#
+# Every field except authMode/username/password/token is a flat, always-
+# meaningful top-level property with full presentation metadata
+# (sh:name/description/order/group) -- rendered by a form generator
+# regardless of which auth variant is selected. The four auth-union fields
+# ALSO get full top-level presentation metadata (mirroring the O365 spike's
+# own finding: a form generator needs a label/description/order for a field
+# whichever variant ends up selecting it) but deliberately carry no
+# sh:minCount at this flat level -- requiredness for those four lives only
+# inside the sh:xone alternatives below, per variant. A form generator
+# cannot tell "is password required?" from this flat list alone; it has to
+# walk into sh:xone and pick the alternative matching the user's authMode
+# choice. Confirmed, not assumed -- this is the same shape o365-
+# declaration.ttl's own comment documents for its five auth fields.
+########################################################################
+
+caldav:ConnectionGroup a sh:PropertyGroup ;
+    rdfs:label "Connection" ;
+    sh:order 1 .
+
+caldav:AuthenticationGroup a sh:PropertyGroup ;
+    rdfs:label "Authentication" ;
+    sh:order 2 .
+
+caldav:ScopeGroup a sh:PropertyGroup ;
+    rdfs:label "Scope" ;
+    sh:order 3 .
+
+caldav:CaldavConnectorShape a sh:NodeShape ;
+    sh:targetClass caldav:CaldavConnector ;
+    contreforts:category "calendar" ;   # config_graph.rs:355, category() -- shared with O365
+    # Same widened-domain use o365-declaration.ttl's own §1 note records:
+    # the union here is not one property's nested value, it is four flat
+    # predicates on the connector node itself, discriminated only in Rust
+    # (set_caldav_connector's match), so "render this as a discriminated
+    # union" has nowhere to sit but the node shape that owns the sh:xone.
+    contreforts:uiShape "discriminated-union" ;
+    rdfs:label "CalDAV" ;
+    sh:description "Syncs calendars and events from any CalDAV server (RFC 4791) using basic auth or a bearer token." ;
+
+    # -- label (always required; identity, not configuration) --
+    sh:property [
+        sh:path caldav:label ;
+        sh:name "Label" ;
+        sh:description "Short identifier for this connector instance (e.g. \"main\", \"support-calendar\"). Allows multiple CalDAV connectors per company." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 1 ;
+        sh:order 1 ;
+        sh:group caldav:ConnectionGroup ;
+        # No contreforts:configField, deliberately (D15, contreforts-core#16):
+        # this is identity, not configuration -- it selects which connector
+        # instance you mean. CaldavConfig (config.rs) has no `label` field
+        # at all; there is nothing for this property to name. Exactly
+        # Forgejo's/GitLab's own reasoning for `label`.
+    ] ;
+
+    # -- instanceUrl (always required) --
+    sh:property [
+        sh:path caldav:instanceUrl ;
+        sh:name "URL" ;
+        sh:description "Base URL of the CalDAV server (e.g. https://cloud.example.com/remote.php/dav)." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        # Same coarse approximation Forgejo's/GitLab's declaration.ttl use
+        # for their own instanceUrl -- reused verbatim rather than
+        # inventing a different bar for the third connector.
+        sh:pattern "^https?://[^\\s]+$" ;
+        sh:order 2 ;
+        sh:group caldav:ConnectionGroup ;
+        # D15 + first real dotted configField path (contreforts-config-
+        # api#20): CaldavConfig calls this field `url` at the top level
+        # (config.rs), not nested under `auth` -- no dot needed here.
+        contreforts:configField "url" ;
+    ] ;
+
+    # -- calendarHome (optional) --
+    sh:property [
+        sh:path caldav:calendarHome ;
+        sh:name "Calendar home" ;
+        sh:description "Explicit calendar home path. Leave empty to auto-discover it from the server." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 3 ;
+        sh:group caldav:ConnectionGroup ;
+        # CaldavConfig's field is named calendar_home -- Rust snake_case,
+        # not the declared camelCase calendarHome -- so this genuinely
+        # needs configField even without any dotted nesting.
+        contreforts:configField "calendar_home" ;
+    ] ;
+
+    # -- customer (optional, storage-only) --
+    sh:property [
+        sh:path caldav:customer ;
+        sh:name "Customer" ;
+        sh:description "Slug of the customer this connector is scoped to, if any." ;
+        # Stored as a bare xsd:string, not an IRI reference to the customer
+        # entity it names -- same finding as Forgejo's mapsToCustomer and
+        # O365's own customer field.
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 1 ;
+        sh:group caldav:ScopeGroup ;
+        # No contreforts:configField, deliberately (D15): this is storage-
+        # only, platform-scoping data -- CaldavConfig (src/config.rs) has
+        # no `customer` field at all, unlike `label`/`instanceUrl`/
+        # `calendarHome` which really do reach the connector's runtime
+        # config. Nothing for this property to name.
+    ] ;
+
+    # -- authMode: the discriminator. --
+    sh:property [
+        sh:path caldav:authMode ;
+        sh:name "Authentication mode" ;
+        sh:description "Selects which fields below apply: \"Basic\" (username/password) or \"Bearer\" (a single access token)." ;
+        sh:in ( "basic" "bearer" ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 1 ;
+        sh:group caldav:AuthenticationGroup ;
+        # First real dotted configField path (contreforts-config-api#20):
+        # CaldavConnectorAuth is stored flat as authMode="basic"/"bearer"
+        # on the connector's own subject, but CaldavConfig nests it under
+        # `auth: CaldavAuth`, whose serde discriminant field is `type`
+        # (#[serde(tag = "type", rename_all = "snake_case")]) -- so the
+        # runtime path is `auth.type`. Works with zero translation because
+        # the stored values "basic"/"bearer" already ARE serde's
+        # rename_all = "snake_case" variant names for CaldavAuth::Basic /
+        # CaldavAuth::Bearer.
+        contreforts:configField "auth.type" ;
+    ] ;
+
+    # -- the two variants' fields, restated flat here (full presentation
+    #    metadata, no sh:minCount -- requiredness lives only in the sh:xone
+    #    alternatives below, per variant). --
+    sh:property [
+        sh:path caldav:username ;
+        sh:name "Username" ;
+        sh:description "Username for Basic authentication. Required when Authentication mode is \"Basic\"." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 2 ;
+        sh:group caldav:AuthenticationGroup ;
+        contreforts:configField "auth.username" ;
+    ] ;
+    sh:property [
+        sh:path caldav:password ;
+        sh:name "Password" ;
+        sh:description "Password for Basic authentication. Required when Authentication mode is \"Basic\"." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 3 ;
+        sh:group caldav:AuthenticationGroup ;
+        contreforts:secret true ;
+        # D15 rule 2 (contreforts-core#16, lint/config_field.rs): once this
+        # node shape uses contreforts:configField anywhere (instanceUrl,
+        # authMode, above), every contreforts:secret true property on it is
+        # REQUIRED to also carry configField -- verified empirically (see
+        # this crate's tests/declaration.rs and the PR report): removing
+        # this line while leaving instanceUrl's configField in place fails
+        # contreforts-declaration's validate() with a D15 violation naming
+        # this exact property.
+        contreforts:configField "auth.password" ;
+    ] ;
+    sh:property [
+        sh:path caldav:token ;
+        sh:name "Access token" ;
+        sh:description "A bearer access token. Required when Authentication mode is \"Bearer\"." ;
+        sh:datatype xsd:string ;
+        sh:nodeKind sh:Literal ;
+        sh:maxCount 1 ;
+        sh:order 4 ;
+        sh:group caldav:AuthenticationGroup ;
+        contreforts:secret true ;
+        # Same D15 rule 2 requirement as password, above.
+        contreforts:configField "auth.token" ;
+    ] ;
+
+    # -- the union itself. Two alternative node shapes, discriminated by
+    #    sh:in on authMode. Each alternative ALSO forbids (sh:maxCount 0)
+    #    the predicates that belong only to the OTHER variant -- D14
+    #    (contreforts-core#14), found necessary by the O365 spike
+    #    (contreforts-workspace#27): a bare sh:xone with no cross-exclusion
+    #    silently accepts an instance carrying fields from BOTH variants,
+    #    because a SHACL property shape only constrains the predicates it
+    #    mentions -- an unlisted predicate is ignored, not forbidden,
+    #    unless a shape says so. This crate's own tests/declaration.rs
+    #    proves both directions: the exclusions present here reject a
+    #    mixed-variant instance, and removing one reproduces the naive
+    #    (silently wrong) behaviour. --
+    sh:xone (
+        caldav:BasicAuthShape
+        caldav:BearerAuthShape
+    ) .
+
+caldav:BasicAuthShape a sh:NodeShape ;
+    rdfs:comment "Alternative 1 of the auth sh:xone: CaldavConnectorAuth::Basic." ;
+    sh:property [
+        sh:path caldav:authMode ;
+        sh:in ( "basic" ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [ sh:path caldav:username ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path caldav:password ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    # exclusion: Bearer's exclusive field must be absent here.
+    sh:property [ sh:path caldav:token ; sh:maxCount 0 ] .
+
+caldav:BearerAuthShape a sh:NodeShape ;
+    rdfs:comment "Alternative 2 of the auth sh:xone: CaldavConnectorAuth::Bearer." ;
+    sh:property [
+        sh:path caldav:authMode ;
+        sh:in ( "bearer" ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [ sh:path caldav:token ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    # exclusions: Basic's exclusive fields must be absent here.
+    sh:property [ sh:path caldav:username ; sh:maxCount 0 ] ;
+    sh:property [ sh:path caldav:password ; sh:maxCount 0 ] .

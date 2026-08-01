@@ -1,0 +1,116 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34): the arms of `Control` that NO
+# declaration in this tree reaches, plus the one integer arm that carries
+# bounds.
+#
+# Measured over the seven real declaration.ttl files (rdflib, workspace
+# develop @ 4cf06df): exactly TWO sh:datatype IRIs are in use on the 45
+# top-level properties -- xsd:string (39) and xsd:integer (4). xsd:boolean
+# appears once tree-wide and only inside src/meta_shapes.ttl, never on a
+# connector field. xsd:decimal, xsd:float, xsd:double, xsd:date,
+# xsd:dateTime, xsd:anyURI, xsd:long and xsd:nonNegativeInteger have ZERO
+# triples anywhere. Without this file, Control::Boolean/Date/Decimal and
+# every non-xsd:integer member of the integer family are unreachable code
+# wearing the costume of a census -- and the first declaration to use one
+# would meet a digest that has never walked it.
+#
+# `listenPort`'s 1..65535 mirrors the real stalwart:listenPort bound
+# (crates/contreforts-connector-stalwart/declaration.ttl), which this
+# crate cannot see; the name is kept identical so a failure reads the same
+# way here as it would there.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix dt:           <https://contreforts.ds-labs.org/ontologies/datatype-controls-test#> .
+
+dt:DatatypeControlsConnectorShape a sh:NodeShape ;
+    sh:targetClass dt:DatatypeControlsConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path dt:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        sh:path dt:listenPort ;
+        sh:name "Listen port" ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 1 ;
+        sh:maxInclusive 65535 ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 2 ;
+    ] ;
+    sh:property [
+        sh:path dt:retries ;
+        sh:name "Retries" ;
+        sh:datatype xsd:nonNegativeInteger ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 3 ;
+    ] ;
+    sh:property [
+        sh:path dt:cacheBytes ;
+        sh:name "Cache bytes" ;
+        sh:datatype xsd:long ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 4 ;
+    ] ;
+    sh:property [
+        sh:path dt:enabled ;
+        sh:name "Enabled" ;
+        sh:datatype xsd:boolean ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 5 ;
+    ] ;
+    sh:property [
+        sh:path dt:startDate ;
+        sh:name "Start date" ;
+        sh:datatype xsd:date ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 6 ;
+    ] ;
+    sh:property [
+        sh:path dt:startedAt ;
+        sh:name "Started at" ;
+        sh:datatype xsd:dateTime ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 7 ;
+    ] ;
+    sh:property [
+        sh:path dt:samplingRatio ;
+        sh:name "Sampling ratio" ;
+        sh:datatype xsd:decimal ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 8 ;
+    ] ;
+    sh:property [
+        sh:path dt:latencyBudget ;
+        sh:name "Latency budget" ;
+        sh:datatype xsd:double ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 9 ;
+    ] ;
+    sh:property [
+        sh:path dt:homepage ;
+        sh:name "Homepage" ;
+        sh:datatype xsd:anyURI ;
+        sh:maxCount 1 ;
+        sh:group dt:GeneralGroup ;
+        sh:order 10 ;
+    ] .
+
+dt:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

@@ -1,0 +1,41 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34), totality hole 4: an sh:datatype the
+# digest has no Control mapping for must become a NAMED error, never a
+# fallback to Control::Text and never an omitted field.
+#
+# xsd:hexBinary is legal SHACL and legal RDF; it simply has no form control
+# in this system. Zero triples of it exist anywhere in the tree. A digest
+# that fell back to Text here would render a hex blob as a plain text box
+# and report success -- the exact "absence presenting as success" class
+# (contreforts/contreforts-workspace#19 comment 6689) this item exists to
+# close.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix unmapped:     <https://contreforts.ds-labs.org/ontologies/unmapped-datatype-test#> .
+
+unmapped:UnmappedDatatypeConnectorShape a sh:NodeShape ;
+    sh:targetClass unmapped:UnmappedDatatypeConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path unmapped:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group unmapped:GeneralGroup ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        sh:path unmapped:fingerprint ;
+        sh:name "Fingerprint" ;
+        sh:datatype xsd:hexBinary ;
+        sh:maxCount 1 ;
+        sh:group unmapped:GeneralGroup ;
+        sh:order 2 ;
+    ] .
+
+unmapped:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

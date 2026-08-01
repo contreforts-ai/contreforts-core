@@ -1,0 +1,39 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34), totality hole 5: a property with
+# neither sh:datatype nor sh:in has no derivable control at all and must
+# become a NAMED error (DigestError::NoDatatypeAndNoIn), not a silently
+# omitted field and not a guessed text box.
+#
+# The two real properties tree-wide that carry no sh:datatype
+# (caldav:authMode, o365:authMode) both carry sh:in, so this case has zero
+# instances in production data today -- which is exactly why it is pinned
+# here before the first declaration that hits it.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix untyped:      <https://contreforts.ds-labs.org/ontologies/untyped-property-test#> .
+
+untyped:UntypedConnectorShape a sh:NodeShape ;
+    sh:targetClass untyped:UntypedConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path untyped:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group untyped:GeneralGroup ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        sh:path untyped:anything ;
+        sh:name "Anything" ;
+        sh:maxCount 1 ;
+        sh:group untyped:GeneralGroup ;
+        sh:order 2 ;
+    ] .
+
+untyped:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

@@ -85,6 +85,23 @@ pub fn declarations(turtle: &str) -> Result<Vec<Declaration>, Violations> {
     run_pipeline(turtle, model::build_declarations)
 }
 
+/// [`declarations`], plus each connector's own [`model::NodeShapeFacts`] --
+/// the identical Part 2/Part 3 pipeline, run once, over the same parse
+/// (contreforts/contreforts-core#34, phase F item W4).
+///
+/// Crate-internal, and the reason [`crate::form_schemas`] does not have to
+/// re-read the Turtle a second time to see `sh:closed`, `sh:deactivated`, the
+/// node-level constraint list, or the `sh:property`/`sh:xone` counts that
+/// `Declaration` does not carry: re-parsing would mean re-deriving which
+/// parsed `Shape` belongs to which `Declaration` by IRI, and a join that
+/// silently misses is precisely the failure mode W4 exists to make
+/// impossible. See `model::NodeShapeFacts`.
+pub(crate) fn declarations_with_facts(
+    turtle: &str,
+) -> Result<Vec<(Declaration, model::NodeShapeFacts)>, Violations> {
+    run_pipeline(turtle, model::build_declarations_with_facts)
+}
+
 /// Shared by [`validate`] and [`declarations`]: Part 2 (meta-shapes.ttl) then Part 3 (the
 /// D14/D2/structural lints), run to completion and combined exactly as `validate`'s own doc
 /// comment describes, before handing the parsed shapes and graph to `build` -- either

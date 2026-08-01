@@ -1,0 +1,51 @@
+# SYNTHETIC, not a real connector. Exercises the ONE arm of
+# `resolve_group` (src/form_schema.rs) that no other fixture reaches:
+# `GroupDescriptor.declared == false` (phase F item W4,
+# contreforts/contreforts-core#34; gap found in review, a3).
+#
+# WHY A SECOND UNRESOLVED-GROUP FIXTURE, next to
+# dangling-group-reference.ttl: that file's `dangling:PhantomGroup` is
+# never typed a sh:PropertyGroup AND carries no rdfs:label and no
+# sh:order, so the label/order check catches it first and the
+# `!group.declared` branch above it is shadowed. Deleting that branch
+# outright left the whole 36-test suite green -- measured -- which makes
+# it exactly the "an error arm no input reaches is not a guarantee, it is
+# unreviewed code" case this item's own tests are written against.
+#
+# `undeclared:LooksLikeAGroup` below is the input that separates the two
+# checks: it carries a real rdfs:label AND a real sh:order, so the
+# label/order check would pass it, and the ONLY thing wrong with it is
+# that nothing ever types it `a sh:PropertyGroup`. W2
+# (contreforts/contreforts-core#33) added `GroupDescriptor.declared`
+# precisely so this is recoverable; without this fixture, nothing proved
+# the digest reads it.
+#
+# Zero such references exist tree-wide: all 17 groups the 45 real
+# top-level properties name are typed a sh:PropertyGroup and carry both an
+# rdfs:label and an sh:order (measured over the seven declaration.ttl
+# files), so rejecting this costs no real connector anything.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix undeclared:   <https://contreforts.ds-labs.org/ontologies/undeclared-group-test#> .
+
+undeclared:UndeclaredGroupConnectorShape a sh:NodeShape ;
+    sh:targetClass undeclared:UndeclaredGroupConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path undeclared:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 1 ;
+        sh:group undeclared:LooksLikeAGroup ;
+    ] .
+
+# Deliberately NOT `a sh:PropertyGroup`. Everything else a real group
+# carries is present, so only `GroupDescriptor.declared` can tell this
+# apart from a well-formed one.
+undeclared:LooksLikeAGroup
+    rdfs:label "Looks Like A Group" ;
+    sh:order 1 .

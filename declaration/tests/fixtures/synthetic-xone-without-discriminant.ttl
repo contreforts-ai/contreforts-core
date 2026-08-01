@@ -1,0 +1,79 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34), totality hole 6b: `build_variants`
+# (src/model.rs) opens each alternative with
+# `let discriminant_value = discriminant_value(alternative)?;`, so an
+# sh:xone alternative whose own copy of the discriminator does not
+# restrict sh:in to exactly ONE value is silently dropped -- the union
+# still renders, one branch short, reporting Ok.
+#
+# Below, the `slow` alternative deliberately restates sh:path x:mode with
+# sh:minCount 1 and NO sh:in at all. Verified against shacl-rust 0.2.9 by
+# parsing this file: `declarations()` returns Ok with variants.len() == 1
+# for an sh:xone list of length 2. Both alternatives still carry the full
+# sh:maxCount 0 cross-exclusion D14 requires, so this file fails no lint --
+# the drop is invisible to everything except a count check.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix xo:           <https://contreforts.ds-labs.org/ontologies/xone-no-discriminant-test#> .
+
+xo:XoneConnectorShape a sh:NodeShape ;
+    sh:targetClass xo:XoneConnector ;
+    contreforts:category "test-only" ;
+    contreforts:uiShape "discriminated-union" ;
+    sh:property [
+        sh:path xo:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group xo:GeneralGroup ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        sh:path xo:mode ;
+        sh:name "Mode" ;
+        sh:in ( "fast" "slow" ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group xo:GeneralGroup ;
+        sh:order 2 ;
+    ] ;
+    sh:property [
+        sh:path xo:fastField ;
+        sh:name "Fast field" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:group xo:GeneralGroup ;
+        sh:order 3 ;
+    ] ;
+    sh:property [
+        sh:path xo:slowField ;
+        sh:name "Slow field" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:group xo:GeneralGroup ;
+        sh:order 4 ;
+    ] ;
+    sh:xone (
+        [
+            a sh:NodeShape ;
+            sh:property [ sh:path xo:mode ; sh:in ( "fast" ) ; sh:minCount 1 ; sh:maxCount 1 ] ;
+            sh:property [ sh:path xo:fastField ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+            sh:property [ sh:path xo:slowField ; sh:maxCount 0 ]
+        ]
+        [
+            a sh:NodeShape ;
+            # The defect this fixture exists for: no sh:in, so no
+            # discriminant can be named and the whole alternative is
+            # dropped by build_variants.
+            sh:property [ sh:path xo:mode ; sh:minCount 1 ; sh:maxCount 1 ] ;
+            sh:property [ sh:path xo:slowField ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+            sh:property [ sh:path xo:fastField ; sh:maxCount 0 ]
+        ]
+    ) .
+
+xo:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

@@ -210,6 +210,24 @@ fn constraint_variant_name(constraint: &Constraint<'_>) -> String {
 /// comment and `merge_variant_requiredness` below), are exposed at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeclarationVariant {
+    /// The `sh:path` of the discriminator property itself (e.g.
+    /// `"https://contreforts.ds-labs.org/ontologies/caldav#authMode"`) --
+    /// the property `discriminant_value` below was read off, reported as a
+    /// full IRI exactly like [`PropertyShape::path`]
+    /// (contreforts/contreforts-core#34, phase F item W4).
+    ///
+    /// Recorded here rather than left for a consumer to re-derive: the only
+    /// other way to recover it is to scan `properties` for the one whose
+    /// own `in_values` happens to be a single-element list equal to
+    /// `discriminant_value`, which is a *guess* that silently picks the
+    /// wrong property the moment two of an alternative's fields are both
+    /// pinned to one value -- and which cannot recover it at all if the
+    /// discriminator also carries `sh:maxCount 0` and is therefore filtered
+    /// out of `properties` (see that field's own doc comment). Since
+    /// `discriminant_value` is already read off exactly one property shape
+    /// in `discriminant_value_and_path`, naming that property here costs
+    /// nothing and removes the guess.
+    pub discriminant_path: String,
     /// The single legal value of the discriminator property (e.g.
     /// caldav:authMode) that selects this alternative -- read off the
     /// alternative's own copy of that property, which restricts `sh:in`
@@ -665,19 +683,22 @@ fn target_class_iri(shape: &Shape<'_>) -> Option<String> {
 }
 
 /// The single `sh:in` value discriminating one `sh:xone` alternative shape
-/// from its siblings -- recognised as the one property shape inside
-/// `alternative` whose own `sh:in` names exactly one legal value (e.g.
+/// from its siblings, together with the `sh:path` of the property it was
+/// read off -- recognised as the one property shape inside `alternative`
+/// whose own `sh:in` names exactly one legal value (e.g.
 /// `caldav:BasicAuthShape`'s own copy of `caldav:authMode`, restricted to
 /// `sh:in ( "basic" )`, vs. the flat restatement's `sh:in ( "basic"
-/// "bearer" )` with two). `None` if no property shape matches -- an
-/// alternative this crate cannot honestly name a discriminant for is
-/// dropped by `build_variants` rather than fabricating one.
-fn discriminant_value(alternative: &Shape<'_>) -> Option<String> {
+/// "bearer" )` with two). `None` if no property shape matches, or if the
+/// one that does has no plain-IRI `sh:path` to name -- an alternative this
+/// crate cannot honestly name a discriminant for is dropped by
+/// `build_variants` rather than fabricating one.
+fn discriminant_value_and_path(alternative: &Shape<'_>) -> Option<(String, String)> {
     alternative.property_shapes.iter().find_map(|p| {
-        p.constraints.iter().find_map(|c| match c {
+        let value = p.constraints.iter().find_map(|c| match c {
             Constraint::In(values) if values.0.len() == 1 => term_literal_value(&values.0[0]),
             _ => None,
-        })
+        })?;
+        Some((value, simple_path_iri(p)?))
     })
 }
 
@@ -710,7 +731,7 @@ fn build_variants(
         .into_iter()
         .flatten()
         .filter_map(|alternative| {
-            let discriminant_value = discriminant_value(alternative)?;
+            let (discriminant_value, discriminant_path) = discriminant_value_and_path(alternative)?;
             let properties = alternative
                 .property_shapes
                 .iter()
@@ -718,11 +739,74 @@ fn build_variants(
                 .filter_map(|p| build_property_shape(p, graph, presentation))
                 .collect();
             Some(DeclarationVariant {
+                discriminant_path,
                 discriminant_value,
                 properties,
             })
         })
         .collect()
+}
+
+/// The facts about a connector's own `sh:NodeShape` that [`Declaration`]
+/// deliberately does not carry, and that a *total* digest of it cannot do
+/// without (contreforts/contreforts-core#34, phase F item W4).
+///
+/// Every one of these is a construct that reaches no code at all today, and
+/// therefore leaves no trace in `Declaration`:
+///   - `sh:closed` / `sh:deactivated` are separate fields on `shacl_rust`'s
+///     `Shape`, not members of `shape.constraints`, so `build_property_shape`'s
+///     `unhandled` recording arm (W1) is structurally blind to both;
+///   - `build_variants` `find_map`s `Constraint::Xone` and nothing else, so
+///     any other node-level constraint reaches nothing;
+///   - `build_property_shape` opens with `let path = simple_path_iri(shape)?;`
+///     and `build_variants` with `let (..) = discriminant_value_and_path(..)?;`,
+///     so a property with an inverse/sequence path, or an alternative with no
+///     single-valued `sh:in`, simply vanishes -- and the only evidence left
+///     is the *count* that went in, which is why both are recorded here.
+///
+/// Crate-internal, and paired with its own `Declaration` at construction
+/// time by [`build_declarations_with_facts`] rather than looked up
+/// afterwards by shape IRI: a lookup that misses is exactly the
+/// "absence presenting as success" failure this whole item exists to close,
+/// and pairing at construction makes a miss unrepresentable instead of
+/// merely unlikely.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NodeShapeFacts {
+    /// `shape.closed.is_some()`.
+    pub closed: bool,
+    /// `shape.deactivated`.
+    pub deactivated: bool,
+    /// The discriminant name (e.g. `"Not"`, `"Sparql"`) of every node-level
+    /// constraint that is not `sh:xone` -- the ones `build_variants` reaches
+    /// with nothing at all. Same derivation as
+    /// [`PropertyShape::unhandled`]'s, via `constraint_variant_name`.
+    pub non_xone_constraints: Vec<String>,
+    /// How many direct `sh:property` children the parser saw, *before*
+    /// `build_property_shape` dropped any of them.
+    pub declared_property_count: usize,
+    /// How many `sh:xone` alternatives the parser saw, *before*
+    /// `build_variants` dropped any of them. Sums every `sh:xone` list on
+    /// the shape, while `build_variants` reads only the first -- so a shape
+    /// carrying two `sh:xone` constraints is itself reported as a drop.
+    pub declared_variant_count: usize,
+}
+
+fn node_shape_facts(shape: &Shape<'_>) -> NodeShapeFacts {
+    let mut non_xone_constraints = Vec::new();
+    let mut declared_variant_count = 0;
+    for constraint in &shape.constraints {
+        match constraint {
+            Constraint::Xone(alternatives) => declared_variant_count += alternatives.0.len(),
+            other => non_xone_constraints.push(constraint_variant_name(other)),
+        }
+    }
+    NodeShapeFacts {
+        closed: shape.closed.is_some(),
+        deactivated: shape.deactivated,
+        non_xone_constraints,
+        declared_property_count: shape.property_shapes.len(),
+        declared_variant_count,
+    }
 }
 
 /// contreforts/contreforts-config-api#27 item 3: a field whose real
@@ -876,5 +960,39 @@ pub(crate) fn build_declarations(
     connector_shapes
         .into_iter()
         .map(|shape| build_declaration_for_shape(shape, graph, &presentation))
+        .collect()
+}
+
+/// [`build_declarations`], plus each connector's own [`NodeShapeFacts`] --
+/// the graph-level constructs `Declaration` deliberately does not model, but
+/// which a *total* digest of it has to be able to name
+/// (contreforts/contreforts-core#34, phase F item W4; see `NodeShapeFacts`
+/// for the list and for why the two are paired here rather than joined by
+/// shape IRI afterwards).
+///
+/// Deliberately a third entry point rather than five new public fields on
+/// `Declaration`: `build_declaration` (singular) folds *every* connector
+/// shape in a multi-connector graph into one `Declaration`, and there is no
+/// honest way to fold a per-shape `sh:closed` flag or `sh:property` count
+/// across differently-typed connectors -- a fold would have to pick one
+/// arbitrary shape's answer and report it for all of them, which is the same
+/// defect contreforts-config-api#27 item 3 already had to fix once in this
+/// very function's singular sibling.
+pub(crate) fn build_declarations_with_facts(
+    shapes: &[Shape<'_>],
+    graph: &oxigraph::model::Graph,
+) -> Result<Vec<(Declaration, NodeShapeFacts)>, Violation> {
+    let connector_shapes = find_connector_shapes(shapes);
+    if connector_shapes.is_empty() {
+        return Err(Violation::structural(NO_CONNECTOR_SHAPE_MESSAGE));
+    }
+
+    let presentation = presentation_by_node(graph)?;
+    connector_shapes
+        .into_iter()
+        .map(|shape| {
+            let declaration = build_declaration_for_shape(shape, graph, &presentation)?;
+            Ok((declaration, node_shape_facts(shape)))
+        })
         .collect()
 }

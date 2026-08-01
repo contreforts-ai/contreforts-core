@@ -28,3 +28,24 @@ thiserror = "2"
 # NOT `{ workspace = true }`, for the same reason as the pins above: this
 # crate's manifest has to stand on its own even outside that workspace.
 tracing = "0.1"
+# Added by the form-schema digest (contreforts/contreforts-core#34, phase F
+# item W4): `FormSchema` and its types are `Serialize` because W7 serves
+# them verbatim rather than re-modelling them in a second wire struct -- so
+# this type IS the wire contract, and deriving it here is what keeps the
+# server from growing a parallel one that can drift. Deliberately NOT
+# `{ workspace = true }`, for the same reason as every pin above: this
+# crate's manifest has to stand on its own even outside the superproject it
+# is nested inside today (see src/lib.rs).
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# Test-only (contreforts/contreforts-core#34, phase F item W4). The digest's
+# output types are `serde::Serialize` because W7 serialises them verbatim
+# rather than re-modelling them in a second wire struct; the one thing this
+# crate's own tests need on top of that is a serialiser to assert the result
+# is deterministic and carries no prefill affordance
+# (`sh:defaultValue` has zero triples tree-wide, so no default may reach the
+# wire). Deliberately NOT `{ workspace = true }`, for the same reason as
+# every pin above: this crate's manifest has to stand on its own even
+# outside the superproject it is nested inside today (see src/lib.rs).
+serde_json = "1"
