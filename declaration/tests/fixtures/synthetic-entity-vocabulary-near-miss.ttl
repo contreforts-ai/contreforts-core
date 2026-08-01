@@ -1,0 +1,70 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34)'s entity-vocabulary rule, at the ONE
+# input where it is not vacuous.
+#
+# Phases E1-E4 put entity vocabulary (rdfs:Class + contreforts:entityKind,
+# 33 classes over the seven real declarations) in the SAME graph as the
+# connector shapes. A generator that walked rdf:type instead of walking
+# down from sh:targetClass would render `Customer` as a form field.
+#
+# The near miss is real and must be reproduced faithfully to be worth
+# testing: over the real tree, `customer` is a genuine sh:path on caldav,
+# o365 and stalwart, while `Customer` is an rdfs:Class carrying
+# contreforts:entityKind "customer" in erpnext, forgejo, gitlab and
+# pennylane -- so the two sets are disjoint by EXACT match but NOT
+# case-insensitively. No single real declaration.ttl contains both halves
+# (caldav declares Calendar and CalendarEvent, not Customer), and this
+# crate cannot see the assembled product graph where they meet
+# (PRODUCT_GRAPH_TTL is generated into contreforts-product's OUT_DIR).
+# This file compresses that exact collision into one graph: a `customer`
+# field and a `Customer` entity class, same namespace, same connector.
+#
+# A test run against a graph WITHOUT entity classes would pass while
+# proving nothing -- the failure mode this project has hit five times
+# ("wrong scope, right logic"). The test using this file asserts the entity
+# set is non-empty before asserting the intersection is.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:         <http://www.w3.org/2004/02/skos/core#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix near:         <https://contreforts.ds-labs.org/ontologies/entity-near-miss-test#> .
+
+near:NearMissConnectorShape a sh:NodeShape ;
+    sh:targetClass near:NearMissConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path near:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group near:GeneralGroup ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        # Lowercase `customer`: a real field, exactly as caldav:customer,
+        # o365:customer and stalwart:customer are.
+        sh:path near:customer ;
+        sh:name "Customer" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:group near:GeneralGroup ;
+        sh:order 2 ;
+    ] .
+
+# Uppercase `Customer`: entity vocabulary, NOT a form field. Same graph,
+# same namespace, one character of difference.
+near:Customer a rdfs:Class ;
+    rdfs:label "Customer" ;
+    rdfs:comment "SYNTHETIC test-only entity class." ;
+    contreforts:entityKind "customer" .
+
+near:Project a rdfs:Class ;
+    rdfs:label "Project" ;
+    rdfs:comment "SYNTHETIC test-only entity class, second one so the entity set is plural." ;
+    contreforts:entityKind "project" .
+
+near:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

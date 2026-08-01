@@ -1,0 +1,63 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34): the two precedence steps of the
+# control-resolution order that NO declared field exercises.
+#
+# Measured over the seven real declaration.ttl files (workspace develop @
+# 4cf06df): no property is both contreforts:secret and sh:in-enumerated,
+# and no property is both sh:in-enumerated and sh:datatype-typed (the only
+# two sh:in properties tree-wide, caldav:authMode and o365:authMode, carry
+# no sh:datatype at all). So steps 1 and 2 of the resolution order are
+# unobservable in production data: whichever arm happens to be written
+# first would silently win, and nothing would notice until the first
+# declaration that is both.
+#   - secretPort : contreforts:secret true AND sh:datatype xsd:integer
+#                  -> Control::Secret (step 1 beats step 3)
+#   - mode       : sh:in AND sh:datatype xsd:string
+#                  -> Control::Select (step 2 beats step 3)
+#
+# No contreforts:configField anywhere in this file, deliberately: the D15
+# lint (lint::config_field) only requires a secret property to name one
+# once the node shape has opted in by declaring configField somewhere, and
+# this fixture is about control resolution, not D15.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix prec:         <https://contreforts.ds-labs.org/ontologies/control-precedence-test#> .
+
+prec:PrecedenceConnectorShape a sh:NodeShape ;
+    sh:targetClass prec:PrecedenceConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path prec:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group prec:GeneralGroup ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        sh:path prec:secretPort ;
+        sh:name "Secret port" ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 1 ;
+        sh:maxInclusive 65535 ;
+        sh:maxCount 1 ;
+        contreforts:secret true ;
+        sh:group prec:GeneralGroup ;
+        sh:order 2 ;
+    ] ;
+    sh:property [
+        sh:path prec:mode ;
+        sh:name "Mode" ;
+        sh:datatype xsd:string ;
+        sh:in ( "fast" "slow_and_careful" ) ;
+        sh:maxCount 1 ;
+        sh:group prec:GeneralGroup ;
+        sh:order 3 ;
+    ] .
+
+prec:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

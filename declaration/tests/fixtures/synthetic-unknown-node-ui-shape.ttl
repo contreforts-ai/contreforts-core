@@ -1,0 +1,36 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34), totality hole 3, at the NODE level:
+# contreforts:uiShape names a registered UI component (D9), and exactly one
+# value is registered tree-wide -- "discriminated-union", carried by
+# caldav's and o365's node shapes and by nothing else (rdflib over the
+# seven real declarations: uiShape appears twice, both that string).
+#
+# The property-level half of this hole is already covered by the vendored
+# forgejo-declaration.ttl, whose groupMapping property carries
+# uiShape "mapping-table". This file is the node-level half: a value the
+# renderer has no component for must be a named error, because the webui
+# is a thin renderer with no RDF awareness and no way to notice that the
+# shape it was asked for does not exist.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix wiz:          <https://contreforts.ds-labs.org/ontologies/unknown-ui-shape-test#> .
+
+wiz:WizardConnectorShape a sh:NodeShape ;
+    sh:targetClass wiz:WizardConnector ;
+    contreforts:category "test-only" ;
+    contreforts:uiShape "multi-step-wizard" ;
+    sh:property [
+        sh:path wiz:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group wiz:GeneralGroup ;
+        sh:order 1 ;
+    ] .
+
+wiz:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

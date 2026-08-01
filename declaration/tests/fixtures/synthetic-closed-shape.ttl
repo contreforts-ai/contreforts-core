@@ -1,0 +1,36 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34), totality hole 5 of the issue's list:
+# sh:closed is a SEPARATE FIELD on shacl-rust's `Shape` (`shape.closed:
+# Option<ClosedConstraint>`), not a member of `shape.constraints` --
+# verified against shacl-rust 0.2.9 by parsing this very file: it reports
+# `closed=Some(ClosedConstraint { ignored_properties: [] })` with
+# `constraints=[]`. W1's `unhandled` recording arm walks `constraints`
+# only, so it is structurally blind to this. Zero sh:closed triples exist
+# tree-wide.
+#
+# A closed shape changes what a conforming instance may carry; a form
+# generated from it without knowing that is a form that produces invalid
+# data. The digest must refuse rather than quietly render the open form.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix closed:       <https://contreforts.ds-labs.org/ontologies/closed-shape-test#> .
+
+closed:ClosedConnectorShape a sh:NodeShape ;
+    sh:targetClass closed:ClosedConnector ;
+    contreforts:category "test-only" ;
+    sh:closed true ;
+    sh:property [
+        sh:path closed:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group closed:GeneralGroup ;
+        sh:order 1 ;
+    ] .
+
+closed:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .

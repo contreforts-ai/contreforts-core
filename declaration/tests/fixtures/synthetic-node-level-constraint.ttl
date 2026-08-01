@@ -1,0 +1,41 @@
+# SYNTHETIC, not a real connector. Exercises phase F item W4
+# (contreforts/contreforts-core#34), totality hole 6c: `build_variants`
+# (src/model.rs) `find_map`s `Constraint::Xone` and nothing else, so any
+# OTHER node-level constraint -- sh:and, sh:or, sh:not, sh:hasValue,
+# sh:sparql -- reaches no code at all. It is not recorded in
+# `PropertyShape::unhandled` either: W1's recording arm runs inside
+# `build_property_shape`, i.e. per PROPERTY shape, and this constraint sits
+# on the NODE shape.
+#
+# Verified against shacl-rust 0.2.9 by parsing this very file: the node
+# shape reports `constraints=["Not"]` and `declarations()` returns Ok, with
+# the sh:not nowhere in the result. The seven real connector node shapes
+# report `constraints=["Xone"]` (caldav, o365) or `[]` (the other five) --
+# so rejecting any non-Xone node-level constraint costs nothing today and
+# closes the hole before it is used.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix nodec:        <https://contreforts.ds-labs.org/ontologies/node-level-constraint-test#> .
+
+nodec:NodeConstraintConnectorShape a sh:NodeShape ;
+    sh:targetClass nodec:NodeConstraintConnector ;
+    contreforts:category "test-only" ;
+    sh:not [
+        sh:path nodec:forbidden ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path nodec:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group nodec:GeneralGroup ;
+        sh:order 1 ;
+    ] .
+
+nodec:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .
