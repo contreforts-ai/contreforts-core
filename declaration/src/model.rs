@@ -501,10 +501,26 @@ fn build_groups(
         }
         groups.push(build_group_descriptor(graph, iri));
     }
+    sort_groups(&mut groups);
+    groups
+}
+
+/// The one comparator both `build_groups` and `build_declaration`'s cross-shape fold sort by:
+/// `(order, iri)` with a `None` order sorted last -- comparing `(order.is_none(), order, iri)`
+/// rather than deriving `Ord` on `Option<i64>` directly, because `Option`'s derived order puts
+/// `None` *first* (`None < Some(_)`), which is the wrong end (see
+/// `declaration/tests/fixtures/group-ordering-none-last.ttl`, built specifically to catch
+/// that). Factored out to one function, called from both sites, so a future change to the
+/// ordering rule cannot drift the two apart, and so a test that exercises only one call site
+/// (e.g. `validate`'s single-shape path, which also runs `build_declaration`'s own re-sort
+/// unconditionally after a no-op fold) still exercises the same code a `declarations`-only
+/// caller depends on -- rather than two independently-maintained copies of the same
+/// three-tuple, where a bug in one could go uncaught by tests that only ever exercise the
+/// other.
+fn sort_groups(groups: &mut [GroupDescriptor]) {
     groups.sort_by(|a, b| {
         (a.order.is_none(), a.order, &a.iri).cmp(&(b.order.is_none(), b.order, &b.iri))
     });
-    groups
 }
 
 /// A property shape's `sh:path`, when it is a single plain IRI (the only
@@ -833,10 +849,8 @@ pub(crate) fn build_declaration(
     }
     // Re-sort after folding in every other shape's own groups -- each `build_declaration_for_shape`
     // call already sorted its own slice, but the fold above interleaves them back out of
-    // (order, iri) order.
-    primary.groups.sort_by(|a, b| {
-        (a.order.is_none(), a.order, &a.iri).cmp(&(b.order.is_none(), b.order, &b.iri))
-    });
+    // (order, iri) order. Same comparator as `build_groups`'s own sort -- see `sort_groups`.
+    sort_groups(&mut primary.groups);
     Ok(primary)
 }
 
