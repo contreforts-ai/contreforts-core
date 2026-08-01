@@ -1,0 +1,23 @@
+# SYNTHETIC, not a real connector. Exercises W2 (contreforts/contreforts-core#33): a
+# property whose sh:group value's subject is never typed as a property group anywhere in
+# this graph -- a dangling reference that, before W2, left no trace at all in Declaration.
+# Zero such references exist tree-wide today (verified against every connector's own
+# declaration.ttl and every fixture in this directory), so this file is the only place the
+# case exists. dangling:PhantomGroup below is referenced but never declared as anything.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix dangling:     <https://contreforts.ds-labs.org/ontologies/dangling-group-test#> .
+
+dangling:DanglingGroupConnectorShape a sh:NodeShape ;
+    sh:targetClass dangling:DanglingGroupConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path dangling:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 1 ;
+        sh:group dangling:PhantomGroup ;
+    ] .

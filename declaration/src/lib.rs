@@ -71,7 +71,7 @@ pub use connector_validation::{
     ConnectorValidatorError, ConnectorViolation,
 };
 pub use error::{Rule, Violation, Violations};
-pub use model::{Declaration, DeclarationVariant, PropertyShape};
+pub use model::{Declaration, DeclarationVariant, GroupDescriptor, PropertyShape};
 pub use validate::{declarations, validate};
 
 /// The declaration vocabulary (Part 1): five terms in

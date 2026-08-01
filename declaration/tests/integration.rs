@@ -6,7 +6,7 @@
 //! `naive_xone_declaration_is_rejected_naming_the_missing_predicates` --
 //! without it, D14 could be written to agree with itself.
 
-use contreforts_declaration::{CONCEPTS_TTL, Rule, validate};
+use contreforts_declaration::{CONCEPTS_TTL, GroupDescriptor, Rule, validate};
 
 const O365_DECLARATION: &str = include_str!("fixtures/o365-declaration.ttl");
 const O365_NAIVE_XONE: &str = include_str!("fixtures/o365-shape-naive-xone.ttl");
@@ -24,6 +24,11 @@ const ENTITY_KIND_TWO_CONNECTORS_SAME_VALUE: &str =
 const CORE_NS_DEFINES_CONCEPT: &str = include_str!("fixtures/core-ns-defines-concept.ttl");
 const SYNTHETIC_UNHANDLED_CONSTRAINT: &str =
     include_str!("fixtures/synthetic-unhandled-constraint.ttl");
+// W2 (contreforts/contreforts-core#33): the sh:PropertyGroup table and the node shape's own
+// label/description.
+const DANGLING_GROUP_REFERENCE: &str = include_str!("fixtures/dangling-group-reference.ttl");
+const NODE_SHAPE_NAME_VS_LABEL: &str = include_str!("fixtures/node-shape-name-vs-label.ttl");
+const GROUP_ORDERING_NONE_LAST: &str = include_str!("fixtures/group-ordering-none-last.ttl");
 
 #[test]
 fn hardened_o365_declaration_validates_clean() {
@@ -683,5 +688,192 @@ fn same_entity_kind_value_across_two_different_connectors_is_not_rejected() {
          must NOT be rejected -- only a conflict within one connector's own namespace is a \
          bug; got: {}",
         result.err().map(|v| v.to_string()).unwrap_or_default()
+    );
+}
+
+// ── W2 (contreforts/contreforts-core#33): the sh:PropertyGroup table and the node shape's ──
+// own label/description. `Declaration.groups: Vec<GroupDescriptor>` is read the same way
+// `category`/`ui_shape`/`config_field` already are (sh::PROPERTY_GROUP/GROUP/ORDER plus
+// `shacl_rust::utils::{get_string_value, get_integer_value}`), not via SPARQL -- SPARQL is
+// only needed for `sh:group`/`sh:order`/`sh:defaultValue` on PROPERTY shapes, which
+// `presentation_by_node`'s existing query already covers and which these tests do not touch
+// (see `presentation_by_node`'s own SPARQL query, unedited by this change).
+//
+// The single most important discipline in this block: assert on group IRIs, never on
+// labels. Only 10 distinct label strings cover the 17 real sh:PropertyGroup subjects
+// tree-wide ("Connection" alone appears 6 times) -- a label-keyed set would silently
+// under-count 17 as 10 while reporting green.
+
+/// A `GroupDescriptor`'s IRI local name (the fragment after `#`), its own label, and its own
+/// order -- the same three fields the issue's "Done when" bullets pin, in the same shape,
+/// so a mismatch names exactly which group and which field is wrong rather than just "the
+/// vec differs".
+fn group_summary(group: &GroupDescriptor) -> (&str, Option<&str>, Option<i64>) {
+    let local_name = group.iri.rsplit('#').next().unwrap_or(group.iri.as_str());
+    (local_name, group.label.as_deref(), group.order)
+}
+
+#[test]
+fn o365_declaration_reports_its_three_groups_by_iri_in_order() {
+    let declaration = validate(O365_DECLARATION).expect("hardened O365 declaration validates");
+    let summaries: Vec<_> = declaration.groups.iter().map(group_summary).collect();
+    assert_eq!(
+        summaries,
+        vec![
+            ("ConnectionGroup", Some("Connection"), Some(1)),
+            ("AuthenticationGroup", Some("Authentication"), Some(2)),
+            ("ScopeGroup", Some("Scope"), Some(3)),
+        ],
+        "O365 declares exactly 3 sh:PropertyGroup subjects (declaration.ttl:164-174), each \
+         with its own rdfs:label and sh:order, sorted by (order, iri); got: {summaries:?}"
+    );
+    for group in &declaration.groups {
+        assert!(
+            group.declared,
+            "every one of O365's 3 groups is typed `a sh:PropertyGroup`, so `declared` must \
+             be true for all of them; {} was not",
+            group.iri
+        );
+    }
+}
+
+#[test]
+fn forgejo_declaration_reports_its_one_group() {
+    let declaration = validate(FORGEJO_DECLARATION).expect("forgejo declaration validates");
+    let summaries: Vec<_> = declaration.groups.iter().map(group_summary).collect();
+    assert_eq!(
+        summaries,
+        vec![("ConnectionGroup", Some("Connection"), Some(1))],
+        "forgejo declares exactly 1 sh:PropertyGroup subject (declaration.ttl:167-169); \
+         got: {summaries:?}"
+    );
+}
+
+#[test]
+fn synthetic_minimal_declaration_reports_a_declared_group_with_no_presentation_text() {
+    // synthetic-minimal-declaration.ttl:13 -- `synth:ConnectionGroup a sh:PropertyGroup .`
+    // with no rdfs:label and no sh:order: the totality case already sitting on disk. A
+    // declared group with no presentation text must still be REPORTED, not dropped for
+    // looking empty.
+    let declaration = validate(SYNTHETIC_MINIMAL).expect("synthetic-minimal validates");
+    let summaries: Vec<_> = declaration.groups.iter().map(group_summary).collect();
+    assert_eq!(
+        summaries,
+        vec![("ConnectionGroup", None, None)],
+        "synth:ConnectionGroup declares neither rdfs:label nor sh:order, but IS typed \
+         a sh:PropertyGroup, so it must appear once with both fields None, not be dropped; \
+         got: {summaries:?}"
+    );
+    assert!(
+        declaration.groups[0].declared,
+        "synth:ConnectionGroup is typed `a sh:PropertyGroup` on disk, so declared must be \
+         true, not false -- false is reserved for a group referenced but never typed"
+    );
+}
+
+#[test]
+fn dangling_sh_group_reference_is_reported_with_declared_false_not_dropped() {
+    // dangling-group-reference.ttl: dangling:label carries `sh:group dangling:PhantomGroup`,
+    // but dangling:PhantomGroup is never typed `a sh:PropertyGroup` anywhere in that graph
+    // (grep -c 'PropertyGroup' on the fixture is 0). Before W2 this left no trace anywhere
+    // in the model at all -- exactly the "absence presenting as success" defect class this
+    // epic exists to close. `declared: bool` exists so this case is visible instead.
+    let declaration =
+        validate(DANGLING_GROUP_REFERENCE).expect("dangling-group-reference.ttl validates");
+    assert_eq!(
+        declaration.groups.len(),
+        1,
+        "exactly one sh:group value is referenced in this fixture (dangling:PhantomGroup), \
+         and it must still surface as one GroupDescriptor even though it is never typed a \
+         sh:PropertyGroup; got: {:?}",
+        declaration.groups
+    );
+    let phantom = &declaration.groups[0];
+    assert!(
+        phantom.iri.ends_with("#PhantomGroup"),
+        "the one group reported must be dangling:PhantomGroup itself, not some other \
+         subject; got iri {}",
+        phantom.iri
+    );
+    assert!(
+        !phantom.declared,
+        "dangling:PhantomGroup is referenced by sh:group but never typed \
+         `a sh:PropertyGroup` anywhere in the fixture -- declared must be false, not true \
+         (true would mean the dangling reference was silently treated as a real group)"
+    );
+    assert_eq!(
+        phantom.label, None,
+        "an undeclared group subject carries no rdfs:label to read"
+    );
+    assert_eq!(
+        phantom.order, None,
+        "an undeclared group subject carries no sh:order to read"
+    );
+}
+
+#[test]
+fn label_and_description_are_none_for_every_existing_fixture_today() {
+    // W3 (gated on this issue) is what fills these in on the real connector node shapes.
+    // Pinned here so W3 landing out of order, or landing silently, is visible: this test
+    // must start failing the moment any of these three fixtures' own node shape gains
+    // sh:name, sh:description, or an sh:name-less rdfs:label.
+    for (name, declaration_ttl) in [
+        ("O365", O365_DECLARATION),
+        ("forgejo", FORGEJO_DECLARATION),
+        ("synthetic-minimal", SYNTHETIC_MINIMAL),
+    ] {
+        let declaration = validate(declaration_ttl)
+            .unwrap_or_else(|e| panic!("{name} declaration must validate clean: {e}"));
+        assert_eq!(
+            declaration.label, None,
+            "{name}'s own node shape carries no sh:name/rdfs:label today; label must be None"
+        );
+        assert_eq!(
+            declaration.description, None,
+            "{name}'s own node shape carries no sh:description today; description must be \
+             None"
+        );
+    }
+}
+
+#[test]
+fn sh_name_wins_over_rdfs_label_for_the_node_shapes_own_label() {
+    // shacl-rust-0.2.9's apply_common_shape_properties (parser/mod.rs:110-114) sets
+    // Shape.name from sh:name, falling back to rdfs:label only when sh:name is absent. No
+    // connector node shape carries sh:name today, so nothing is shadowed in the tree -- but
+    // W3 is about to add rdfs:label to every connector's node shape, so this precedence
+    // must be pinned NOW, before a future sh:name could silently displace it unnoticed.
+    let declaration =
+        validate(NODE_SHAPE_NAME_VS_LABEL).expect("node-shape-name-vs-label.ttl validates");
+    assert_eq!(
+        declaration.label.as_deref(),
+        Some("Name Wins"),
+        "the node shape carries both sh:name \"Name Wins\" and rdfs:label \"Label Loses\" -- \
+         sh:name must win, per shacl-rust's own fallback order; got {:?}",
+        declaration.label
+    );
+}
+
+#[test]
+fn groups_with_no_declared_order_sort_last_not_first() {
+    // group-ordering-none-last.ttl declares GroupB (order 2) and GroupA (order 1) before
+    // GroupNoOrder (no sh:order) in FIXTURE order -- but GroupNoOrder must still sort AFTER
+    // both in the RESULT, per "sorted by (order, iri) with None order last". A naive
+    // `Option<i64>` derived-Ord sort would put None FIRST (None < Some(_)), which this
+    // fixture is deliberately shaped to catch: GroupNoOrder is declared before GroupA/GroupB
+    // in the source, so a sort-by-declaration-order bug and a None-sorts-first bug would
+    // both put it somewhere other than last.
+    let declaration =
+        validate(GROUP_ORDERING_NONE_LAST).expect("group-ordering-none-last.ttl validates");
+    let summaries: Vec<_> = declaration.groups.iter().map(group_summary).collect();
+    assert_eq!(
+        summaries,
+        vec![
+            ("GroupA", Some("First"), Some(1)),
+            ("GroupB", Some("Second"), Some(2)),
+            ("GroupNoOrder", Some("No order"), None),
+        ],
+        "groups must sort by (order, iri) with a None order sorted last, regardless of the \
+         order groups were declared or referenced in; got: {summaries:?}"
     );
 }
