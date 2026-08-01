@@ -50,6 +50,16 @@
 //! and no connector wiring (C7) -- this crate is usable by a connector's
 //! `build.rs`, but nothing here calls it from one yet.
 //!
+//! ## The form-schema digest
+//!
+//! [`form_schemas`] is the other consumer of [`Declaration`]: the **total**
+//! function that turns a validated declaration into the renderable
+//! [`FormSchema`] the config UI is generated from
+//! (contreforts/contreforts-core#34, phase F item W4). "Total" is the whole
+//! point -- a SHACL construct it does not understand becomes a named
+//! [`DigestError`], never a silently missing form field. See
+//! `form_schema.rs`'s own module documentation.
+//!
 //! ## Server-side connector-instance validation
 //!
 //! [`connector_validation`] holds the *other* half of this crate's SHACL usage: not "is this
@@ -62,6 +72,7 @@
 
 mod connector_validation;
 mod error;
+mod form_schema;
 mod lint;
 mod model;
 mod validate;
@@ -71,6 +82,10 @@ pub use connector_validation::{
     ConnectorValidatorError, ConnectorViolation,
 };
 pub use error::{Rule, Violation, Violations};
+pub use form_schema::{
+    Control, DigestError, FieldDescriptor, FormSchema, GroupSection, KNOWN_UI_SHAPES, SelectOption,
+    VariantRule, form_schemas,
+};
 pub use model::{Declaration, DeclarationVariant, GroupDescriptor, PropertyShape};
 pub use validate::{declarations, validate};
 
