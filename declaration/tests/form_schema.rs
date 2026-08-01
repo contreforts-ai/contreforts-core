@@ -67,6 +67,8 @@ const NODE_LEVEL_CONSTRAINT: &str = include_str!("fixtures/synthetic-node-level-
 const UNKNOWN_NODE_UI_SHAPE: &str = include_str!("fixtures/synthetic-unknown-node-ui-shape.ttl");
 const UNDECKED_KIND: &str = include_str!("fixtures/synthetic-undecked-kind.ttl");
 const ENTITY_NEAR_MISS: &str = include_str!("fixtures/synthetic-entity-vocabulary-near-miss.ttl");
+const UNDECLARED_GROUP: &str = include_str!("fixtures/synthetic-undeclared-group.ttl");
+const NON_INTEGER_BOUND: &str = include_str!("fixtures/synthetic-non-integer-bound.ttl");
 const UNHANDLED_CONSTRAINT: &str = include_str!("fixtures/synthetic-unhandled-constraint.ttl");
 const SYNTHETIC_MINIMAL: &str = include_str!("fixtures/synthetic-minimal-declaration.ttl");
 const DANGLING_GROUP: &str = include_str!("fixtures/dangling-group-reference.ttl");
@@ -959,6 +961,92 @@ fn a_two_connector_graph_yields_one_scoped_schema_each_in_a_deterministic_order(
     );
 }
 
+/// The same connector-ordering guarantee as the test above, over FIVE
+/// connectors instead of two, because with two the assertion only detects a
+/// missing sort probabilistically.
+///
+/// Added in review (a3), measured: with the digest's connector sort
+/// neutralised, the two-connector test above failed on only 6 of 8 runs -- a
+/// random order of two agrees with the expected one half the time, and two
+/// calls agree with each other half the time. That is a guarantee the suite
+/// reports as held roughly a quarter of the time it is broken. With five
+/// connectors the same mutation fails every run (5 of 5 measured against the
+/// seven real declarations, and 5 of 5 here).
+///
+/// This is the shape W5 calls `form_schemas` in -- `PRODUCT_GRAPH_TTL`, the
+/// union of all seven -- so the multi-connector path is the one that has to be
+/// deterministic, not the two-connector one.
+#[test]
+fn five_connectors_are_ordered_by_kind_and_serialise_identically_across_calls() {
+    let union =
+        format!("{CALDAV}\n{O365}\n{CONTROL_PRECEDENCE}\n{DATATYPE_CONTROLS}\n{ENTITY_NEAR_MISS}");
+    let schemas = ok(&union);
+
+    assert_eq!(
+        schemas.iter().map(|s| s.kind.as_str()).collect::<Vec<_>>(),
+        vec![
+            "caldav",
+            "control-precedence-test",
+            "datatype-controls-test",
+            "entity-near-miss-test",
+            "o365",
+        ],
+        "five schemas, ordered by kind -- 1 of the 120 possible traversal orders would agree \
+         with this by luck"
+    );
+
+    // Scoping: each connector's own fields and nobody else's, in the same
+    // order the single-connector tests pin.
+    assert_eq!(
+        field_ids(&schemas[0]),
+        vec![
+            "label",
+            "instanceUrl",
+            "calendarHome",
+            "authMode",
+            "username",
+            "password",
+            "token",
+            "customer",
+        ],
+        "caldav's schema in a five-connector graph is byte-for-byte its schema alone"
+    );
+    assert_eq!(field_ids(&schemas[4]).len(), 9, "o365 keeps its nine");
+    assert_eq!(
+        schemas.iter().map(|s| field_ids(s).len()).sum::<usize>(),
+        8 + 3 + 10 + 2 + 9,
+        "no field of one connector leaks into another's schema"
+    );
+
+    // The variants are scoped too: caldav's two and o365's two, and no rule
+    // of one naming a field of the other.
+    for schema in &schemas {
+        let ids = field_ids(schema);
+        for rule in &schema.variants {
+            for id in rule
+                .shown
+                .iter()
+                .chain(&rule.required)
+                .chain(&rule.hidden)
+                .chain(std::iter::once(&rule.discriminant_field))
+            {
+                assert!(
+                    ids.contains(id),
+                    "{}: rule {:?} names {id:?}, which belongs to another connector: {ids:?}",
+                    schema.kind,
+                    rule.discriminant_value
+                );
+            }
+        }
+    }
+
+    assert_eq!(
+        serde_json::to_string(&ok(&union)).expect("serialises"),
+        serde_json::to_string(&ok(&union)).expect("serialises"),
+        "two calls in one process must agree -- the parser's traversal order does not"
+    );
+}
+
 // ========================================================================
 // The entity-vocabulary boundary
 // ========================================================================
@@ -1299,6 +1387,93 @@ fn an_unresolvable_group_is_an_error_whether_dangling_or_merely_unlabelled() {
             "an ungrouped property must be named, not dropped from every section: {message}"
         );
     }
+}
+
+/// The OTHER arm of `resolve_group`: a group that carries a real `rdfs:label`
+/// and a real `sh:order` but is never itself typed `a sh:PropertyGroup`.
+///
+/// Added in review (a3). `dangling-group-reference.ttl` above does NOT reach
+/// this branch: its `PhantomGroup` is undeclared AND unlabelled AND
+/// order-less, so the label/order check catches it first. Deleting the
+/// `!group.declared` branch outright left all 36 tests green -- measured --
+/// which is precisely the "an error arm no input reaches is not a guarantee,
+/// it is unreviewed code" case this file's own header argues against. W2
+/// (contreforts/contreforts-core#33) added `GroupDescriptor.declared` so that
+/// this is recoverable; until this fixture, nothing proved the digest read it.
+///
+/// Without the branch, the section renders under a heading taken from a
+/// subject the graph never says is a group at all.
+#[test]
+fn a_group_that_is_labelled_and_ordered_but_never_typed_a_property_group_is_unresolved() {
+    // Precondition, so the test cannot pass for the wrong reason: the group
+    // really does resolve to a label and an order, and differs from a
+    // well-formed one ONLY in `declared`.
+    let declaration = declarations(UNDECLARED_GROUP)
+        .expect("the fixture still validates")
+        .remove(0);
+    let group = declaration
+        .groups
+        .iter()
+        .find(|g| g.iri.ends_with("#LooksLikeAGroup"))
+        .expect("the group descriptor exists");
+    assert_eq!(
+        (group.label.as_deref(), group.order, group.declared),
+        (Some("Looks Like A Group"), Some(1), false),
+        "the fixture must be labelled and ordered and NOT declared, or it proves nothing -- it \
+         would just re-test the label/order branch that dangling-group-reference.ttl covers"
+    );
+
+    let errors = err(UNDECLARED_GROUP);
+    let message = message_of(&errors, "UnresolvedGroup");
+    assert!(
+        message.contains("undeclared-group-test"),
+        "names the kind: {message}"
+    );
+    assert!(
+        message.contains("LooksLikeAGroup"),
+        "names the group: {message}"
+    );
+    assert!(
+        message.contains("sh:PropertyGroup"),
+        "says WHICH of the three group faults this is, so a maintainer types the group rather \
+         than adding a label it already has: {message}"
+    );
+}
+
+/// An `sh:minInclusive` that will not parse as an integer, on a field whose
+/// `sh:datatype` IS an integer type.
+///
+/// Added in review (a3). `PropertyShape` keeps a bound as its literal's raw
+/// lexical form on purpose -- that layer does not know the property's range --
+/// so the digest is the one place the parse can happen, and a bound it cannot
+/// parse is a declared constraint the rendered form would silently not
+/// enforce. Silencing that error arm to `None` left all 36 tests green
+/// (measured): the field still rendered, as an UNBOUNDED number box for a
+/// property the declaration bounded.
+///
+/// Zero instances tree-wide -- all five real bounds are plain integers -- which
+/// is exactly why the arm needs an input.
+#[test]
+fn a_non_integer_bound_on_an_integer_field_is_an_error_not_an_unbounded_number_box() {
+    let errors = err(NON_INTEGER_BOUND);
+    let message = message_of(&errors, "UnhandledConstraint");
+    assert!(
+        message.contains("non-integer-bound-test"),
+        "names the kind: {message}"
+    );
+    assert!(
+        message.contains("listenPort"),
+        "names the sh:path local name: {message}"
+    );
+    assert!(
+        message.contains("MinInclusive"),
+        "names the construct: {message}"
+    );
+    assert!(
+        message.contains("1.5"),
+        "quotes the lexical form that would not parse, which is the whole of what a maintainer \
+         has to go and fix: {message}"
+    );
 }
 
 /// `declarations()` returns `Result<Vec<Declaration>, Violations>` -- the

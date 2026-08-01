@@ -1,0 +1,56 @@
+# SYNTHETIC, not a real connector. Exercises the ONE arm of
+# `integer_bound` (src/form_schema.rs) that no other fixture reaches: a
+# declared sh:minInclusive / sh:maxInclusive that will not parse as an
+# integer, on a field whose sh:datatype is an integer type (phase F item
+# W4, contreforts/contreforts-core#34; gap found in review, a3).
+#
+# WHY THIS MATTERS AND WHY IT IS NOT COVERED ELSEWHERE. `PropertyShape`
+# keeps a bound as its literal's RAW LEXICAL FORM, deliberately -- that
+# layer does not know the property's range and will not narrow it. The
+# digest is where the range is known, so the digest is where the parse
+# happens, and a bound the digest cannot parse is a declared constraint
+# the rendered form would silently not enforce. Dropping it to `None`
+# would produce an unbounded number box for a field the declaration
+# bounded -- the exact "absence presenting as success" shape this whole
+# item exists to close. Silencing the error arm left the whole suite
+# green -- measured -- so before this file the arm was unreviewed code.
+#
+# ZERO INSTANCES TREE-WIDE: all five sh:minInclusive/sh:maxInclusive
+# objects in the tree (stalwart:listenPort, smtpLocalPort, smtpRelayPort,
+# ollamaTimeoutSecs, and this directory's own datatype-controls fixture)
+# are plain xsd:integer literals. `1.5` below is an xsd:decimal, which is
+# the realistic way this arrives: a bound written with a decimal point on
+# a field declared xsd:integer.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix nib:          <https://contreforts.ds-labs.org/ontologies/non-integer-bound-test#> .
+
+nib:NonIntegerBoundConnectorShape a sh:NodeShape ;
+    sh:targetClass nib:NonIntegerBoundConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path nib:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group nib:GeneralGroup ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        sh:path nib:listenPort ;
+        sh:name "Listen port" ;
+        sh:datatype xsd:integer ;
+        # Not an integer. The field IS an integer field, so this bound is
+        # meant to be enforced and cannot simply be ignored.
+        sh:minInclusive 1.5 ;
+        sh:maxCount 1 ;
+        sh:group nib:GeneralGroup ;
+        sh:order 2 ;
+    ] .
+
+nib:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .
