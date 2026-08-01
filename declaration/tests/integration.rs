@@ -22,6 +22,8 @@ const ENTITY_KIND_CONFLICT: &str = include_str!("fixtures/entity-kind-conflict.t
 const ENTITY_KIND_TWO_CONNECTORS_SAME_VALUE: &str =
     include_str!("fixtures/entity-kind-two-connectors-same-value.ttl");
 const CORE_NS_DEFINES_CONCEPT: &str = include_str!("fixtures/core-ns-defines-concept.ttl");
+const SYNTHETIC_UNHANDLED_CONSTRAINT: &str =
+    include_str!("fixtures/synthetic-unhandled-constraint.ttl");
 
 #[test]
 fn hardened_o365_declaration_validates_clean() {
@@ -174,6 +176,88 @@ fn forgejo_declaration_validates_clean() {
         .expect("groupMapping property present");
     assert_eq!(group_mapping.ui_shape.as_deref(), Some("mapping-table"));
     assert!(!group_mapping.secret);
+}
+
+#[test]
+fn forgejo_label_min_length_and_node_kind_are_captured_not_dropped() {
+    // contreforts/contreforts-workspace#60, phase F item W1: sh:minLength
+    // and sh:nodeKind used to fall through PropertyShape's constraint
+    // match into the bare `_ => {}` arm (model.rs, around what was line
+    // 350 before W1) and vanish, exactly like sh:in/sh:pattern/
+    // sh:minInclusive/sh:maxInclusive did before contreforts-config-api#27
+    // item 1 gave those four their own fields.
+    //
+    // Pinned against the real Forgejo declaration's own `label` property
+    // (crates/contreforts-connector-forgejo/declaration.ttl:185-194, in
+    // the tree at ad35b4a), mirrored verbatim in this fixture at
+    // forgejo-declaration.ttl:176-186: `sh:minLength 1` and
+    // `sh:nodeKind sh:Literal`.
+    let declaration =
+        validate(FORGEJO_DECLARATION).expect("forgejo-declaration.ttl must validate clean");
+
+    let label = declaration
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("/forgejo#label"))
+        .expect("label property present");
+    assert_eq!(
+        label.min_length,
+        Some(1),
+        "forgejo:label's real sh:minLength 1 must be captured, not dropped"
+    );
+    assert_eq!(
+        label.node_kind.as_deref(),
+        Some("http://www.w3.org/ns/shacl#Literal"),
+        "forgejo:label's real sh:nodeKind sh:Literal must be captured as the full SHACL \
+         vocabulary IRI, not dropped"
+    );
+}
+
+#[test]
+fn unhandled_constraint_is_recorded_by_name_not_silently_dropped() {
+    // contreforts/contreforts-workspace#60, phase F item W1's own point,
+    // not incidental to it: the bare `_ => {}` arm that used to swallow
+    // every constraint kind this crate has not grown a field for is
+    // replaced by one that RECORDS the dropped constraint's discriminant
+    // into `PropertyShape.unhandled`. Without this, an unrecognised SHACL
+    // construct is a field that silently fails to render -- the exact
+    // "absence presenting as success" defect class this epic exists to
+    // close, and the one W4's later *total* digest depends on being able
+    // to name.
+    //
+    // sh:maxLength is the proof constraint: it is a real `Constraint`
+    // variant shacl-rust 0.2.9 exposes (`Constraint::MaxLength`), but this
+    // crate only grew a field for its sibling sh:minLength in W1, not
+    // sh:maxLength -- so it must still land in `unhandled`, named, rather
+    // than vanish.
+    let declaration = validate(SYNTHETIC_UNHANDLED_CONSTRAINT)
+        .expect("synthetic-unhandled-constraint.ttl must validate clean");
+
+    let label = declaration
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("/synthetic-unhandled-test#label"))
+        .expect("label property present");
+    assert!(
+        label.unhandled.iter().any(|name| name.contains("MaxLength")),
+        "sh:maxLength must be named in PropertyShape.unhandled, got: {:?}",
+        label.unhandled
+    );
+
+    // Non-vacuous-scope proof: a property with no unrecognised constraint
+    // at all must NOT accumulate anything in `unhandled` -- the arm
+    // records what it actually drops, it does not mark every property as
+    // unhandled regardless of content.
+    let token = declaration
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("/synthetic-unhandled-test#token"))
+        .expect("token property present");
+    assert!(
+        token.unhandled.is_empty(),
+        "token carries no unrecognised constraint; unhandled must stay empty, got: {:?}",
+        token.unhandled
+    );
 }
 
 #[test]

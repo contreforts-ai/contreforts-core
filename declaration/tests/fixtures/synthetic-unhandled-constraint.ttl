@@ -1,0 +1,37 @@
+# SYNTHETIC, not a real connector. Exercises PropertyShape.unhandled
+# (contreforts/contreforts-workspace#60, phase F item W1): sh:maxLength has
+# no match arm in build_property_shape's constraint match (src/model.rs) --
+# unlike sh:minLength/sh:nodeKind, which W1 gives their own fields -- so it
+# must fall to the catch-all arm and be RECORDED there by name, not
+# silently dropped the way every unrecognised constraint used to be.
+#
+# No real declaration uses sh:maxLength at all (grep -rc 'sh:maxLength'
+# across every crates/contreforts-connector-*/declaration.ttl is zero, as
+# of contreforts-workspace#60's own plan comment), so this is exercised
+# only by this synthetic fixture -- mirroring
+# synthetic-minimal-declaration.ttl's own reasoning for sh:defaultValue.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix synth:        <https://contreforts.ds-labs.org/ontologies/synthetic-unhandled-test#> .
+
+synth:SyntheticUnhandledConnectorShape a sh:NodeShape ;
+    sh:targetClass synth:SyntheticUnhandledConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path synth:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        # The one constraint this fixture exists for: no match arm today.
+        sh:maxLength 10 ;
+    ] ;
+    sh:property [
+        sh:path synth:token ;
+        sh:name "Token" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        contreforts:secret true ;
+    ] .
