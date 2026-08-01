@@ -1,0 +1,54 @@
+# SYNTHETIC, not a real connector. Exercises W2 (contreforts/contreforts-core#33)'s
+# `GroupDescriptor` ordering rule: sorted by (order, iri), with a group that declares no
+# sh:order sorted last rather than participating in a numeric comparison against ones that
+# do. None of the seven real connectors mixes an ordered and an unordered group on one node
+# shape (every one of the 17 sh:PropertyGroup subjects tree-wide carries both rdfs:label
+# and sh:order -- confirmed by grep), so this is the only place the "None sorts last" rule
+# is exercised at all. GroupNoOrder is declared before GroupA/GroupB in this file and would
+# sort first under a naive derived-Ord `Option<i64>` comparison (None < Some(_)) -- the
+# fixture is ordered this way on purpose so the wrong sort is not accidentally hidden by
+# fixture order matching intended output order.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix ordertest:    <https://contreforts.ds-labs.org/ontologies/group-ordering-test#> .
+
+ordertest:GroupB a sh:PropertyGroup ;
+    rdfs:label "Second" ;
+    sh:order 2 .
+
+ordertest:GroupNoOrder a sh:PropertyGroup ;
+    rdfs:label "No order" .
+
+ordertest:GroupA a sh:PropertyGroup ;
+    rdfs:label "First" ;
+    sh:order 1 .
+
+ordertest:OrderingConnectorShape a sh:NodeShape ;
+    sh:targetClass ordertest:OrderingConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path ordertest:fieldB ;
+        sh:name "Field B" ;
+        sh:datatype xsd:string ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+        sh:group ordertest:GroupB ;
+    ] ;
+    sh:property [
+        sh:path ordertest:fieldNoOrder ;
+        sh:name "Field no order" ;
+        sh:datatype xsd:string ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+        sh:group ordertest:GroupNoOrder ;
+    ] ;
+    sh:property [
+        sh:path ordertest:fieldA ;
+        sh:name "Field A" ;
+        sh:datatype xsd:string ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+        sh:group ordertest:GroupA ;
+    ] .

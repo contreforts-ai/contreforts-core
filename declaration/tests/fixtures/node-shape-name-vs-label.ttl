@@ -1,0 +1,25 @@
+# SYNTHETIC, not a real connector. Exercises W2 (contreforts/contreforts-core#33)'s pinned
+# precedence: shacl-rust-0.2.9's `apply_common_shape_properties`
+# (src/parser/mod.rs:110-114) sets `Shape.name` from sh:name, falling back to rdfs:label
+# only when sh:name is absent. No connector node shape carries sh:name today, so nothing is
+# shadowed in the tree -- this file is the only place that precedence is actually exercised,
+# so a future rdfs:label addition (W3) cannot silently start losing to an unnoticed sh:name.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix nvl:          <https://contreforts.ds-labs.org/ontologies/name-vs-label-test#> .
+
+nvl:NameVsLabelConnectorShape a sh:NodeShape ;
+    sh:targetClass nvl:NameVsLabelConnector ;
+    contreforts:category "test-only" ;
+    sh:name "Name Wins" ;
+    rdfs:label "Label Loses" ;
+    sh:property [
+        sh:path nvl:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:order 1 ;
+    ] .
