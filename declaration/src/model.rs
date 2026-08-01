@@ -19,10 +19,11 @@ use std::collections::HashMap;
 use oxigraph::model::{NamedNodeRef, NamedOrBlankNodeRef, TermRef};
 use oxigraph::store::Store;
 use shacl_rust::Shape;
-use shacl_rust::core::constraints::Constraint;
+use shacl_rust::core::constraints::{Constraint, NodeKind};
 use shacl_rust::core::path::PathElement;
 use shacl_rust::core::target::Target;
 use shacl_rust::utils::{get_boolean_value, get_string_value};
+use shacl_rust::vocab::sh;
 
 use crate::error::Violation;
 
@@ -109,6 +110,92 @@ pub struct PropertyShape {
     /// `sh:maxInclusive`'s value, same shape and reasoning as
     /// `min_inclusive` above.
     pub max_inclusive: Option<String>,
+    /// `sh:minLength`'s value (contreforts/contreforts-workspace#60, phase F
+    /// item W1), e.g. forgejo:label's real `sh:minLength 1`. `None` when
+    /// absent. Same previously-dropped-by-`_ => {}` defect as `in_values`/
+    /// `pattern`/`min_inclusive`/`max_inclusive` above.
+    ///
+    /// `shacl_rust::core::constraints::MinLengthConstraint` wraps an `i32`,
+    /// not a `u32` -- SHACL's own spec requires `sh:minLength` to be a
+    /// non-negative integer, but shacl-rust's parser does not itself
+    /// enforce that at parse time, so a hand-authored graph could still
+    /// carry a negative one. Rather than `as u32`, which would silently
+    /// wrap a negative value into some large, wrong, unsigned number, the
+    /// constraint match below uses `u32::try_from`, which fails (leaving
+    /// this `None`) instead. No real declaration has ever carried a
+    /// negative `sh:minLength` (it would be invalid SHACL), so this is
+    /// exercised only in reasoning, not by any fixture.
+    pub min_length: Option<u32>,
+    /// `sh:nodeKind`'s value (contreforts/contreforts-workspace#60, phase F
+    /// item W1), reported as the full SHACL vocabulary IRI (e.g.
+    /// `"http://www.w3.org/ns/shacl#Literal"`), matching how `datatype`
+    /// and `category` etc. are reported elsewhere in this struct. `None`
+    /// when absent. Same previously-dropped-by-`_ => {}` defect as
+    /// `min_length` above.
+    ///
+    /// `shacl_rust::core::constraints::NodeKindConstraint` wraps its own
+    /// `NodeKind` enum, not the IRI it was parsed from -- the library's own
+    /// parser (`parser/constraints/node_kind.rs`) matches the raw term
+    /// against `shacl_rust::vocab::sh::{IRI,LITERAL,..}` and then discards
+    /// it, keeping only the enum variant. `node_kind_iri` below maps the
+    /// enum back to a string through those same `sh::` constants, rather
+    /// than hardcoding the IRIs a second time.
+    pub node_kind: Option<String>,
+    /// The discriminant name (e.g. `"MaxLength"`) of every constraint this
+    /// property shape carries that this crate has not grown a dedicated
+    /// field for (contreforts/contreforts-workspace#60, phase F item W1).
+    /// Empty when every constraint present has a field above.
+    ///
+    /// This is the point of W1, not incidental to it: previously, an
+    /// unrecognised SHACL construct fell through the constraint match's
+    /// bare `_ => {}` arm and vanished with no trace at all -- exactly the
+    /// "absence presenting as success" defect class this epic exists to
+    /// close. W4's later *total* digest depends on being able to name a
+    /// dropped construct here rather than silently rendering an
+    /// incomplete form.
+    pub unhandled: Vec<String>,
+}
+
+/// Maps a parsed `sh:nodeKind` value back to the SHACL vocabulary IRI it
+/// was parsed from. `shacl_rust`'s `NodeKind` enum (unlike, say, its
+/// `DatatypeConstraint`, which keeps the original `NamedNodeRef`) carries no
+/// field or method exposing that IRI -- only a `Display` impl that prints
+/// the bare variant name ("Literal", "IRI", ...), not a usable vocabulary
+/// term. This maps back through the exact same `shacl_rust::vocab::sh::*`
+/// constants the library's own parser
+/// (`parser/constraints/node_kind.rs::parse_node_kind`) matched the
+/// original term against, so it stays in lockstep with upstream's own
+/// vocabulary rather than hardcoding IRI strings a second time.
+fn node_kind_iri(kind: NodeKind) -> &'static str {
+    match kind {
+        NodeKind::IRI => sh::IRI.as_str(),
+        NodeKind::BlankNode => sh::BLANK_NODE.as_str(),
+        NodeKind::Literal => sh::LITERAL.as_str(),
+        NodeKind::BlankNodeOrIRI => sh::BLANK_NODE_OR_IRI.as_str(),
+        NodeKind::BlankNodeOrLiteral => sh::BLANK_NODE_OR_LITERAL.as_str(),
+        NodeKind::IRIOrLiteral => sh::IRI_OR_LITERAL.as_str(),
+    }
+}
+
+/// The discriminant name of a `Constraint` variant this crate has not
+/// grown a dedicated `PropertyShape` field for (contreforts/
+/// contreforts-workspace#60, phase F item W1's own point -- see
+/// `PropertyShape::unhandled`'s doc comment).
+///
+/// Every `Constraint` variant wraps exactly one inner value (e.g.
+/// `MaxLength(MaxLengthConstraint(10))`), so its derived `Debug` output is
+/// always `"VariantName(...)"`. Taking the text before the first `(`
+/// yields the bare variant name without an exhaustive match this crate
+/// would otherwise have to keep in sync by hand every time shacl-rust
+/// grows a new constraint kind -- itself a form of the very "silently
+/// missing" failure mode this field exists to prevent, just moved from
+/// runtime data into unreviewed source.
+fn constraint_variant_name(constraint: &Constraint<'_>) -> String {
+    let debug = format!("{constraint:?}");
+    match debug.split_once('(') {
+        Some((name, _)) => name.to_string(),
+        None => debug,
+    }
 }
 
 /// One `sh:xone` alternative of a connector whose node shape carries a
@@ -327,6 +414,9 @@ fn build_property_shape(
     let mut pattern = None;
     let mut min_inclusive = None;
     let mut max_inclusive = None;
+    let mut min_length = None;
+    let mut node_kind = None;
+    let mut unhandled = Vec::new();
     for constraint in &shape.constraints {
         match constraint {
             Constraint::Datatype(d) => datatype = Some(d.0.as_str().to_string()),
@@ -347,7 +437,17 @@ fn build_property_shape(
             Constraint::Pattern(p) => pattern = Some(p.pattern.clone()),
             Constraint::MinInclusive(term) => min_inclusive = term_literal_value(&term.0),
             Constraint::MaxInclusive(term) => max_inclusive = term_literal_value(&term.0),
-            _ => {}
+            // contreforts/contreforts-workspace#60, phase F item W1: same
+            // previously-dropped-by-`_ => {}` defect as the four above.
+            // See `min_length`'s doc comment on `PropertyShape` for why
+            // this is `u32::try_from`, not `as u32`.
+            Constraint::MinLength(c) => min_length = u32::try_from(c.0).ok(),
+            Constraint::NodeKind(c) => node_kind = Some(node_kind_iri(c.0).to_string()),
+            // W1's own point (see `PropertyShape::unhandled`'s doc
+            // comment): every other constraint kind still has no field to
+            // hold it, but it is no longer silently discarded -- it is
+            // named here instead.
+            other => unhandled.push(constraint_variant_name(other)),
         }
     }
 
@@ -378,6 +478,9 @@ fn build_property_shape(
         pattern,
         min_inclusive,
         max_inclusive,
+        min_length,
+        node_kind,
+        unhandled,
     })
 }
 
