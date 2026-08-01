@@ -239,7 +239,10 @@ fn unhandled_constraint_is_recorded_by_name_not_silently_dropped() {
         .find(|p| p.path.ends_with("/synthetic-unhandled-test#label"))
         .expect("label property present");
     assert!(
-        label.unhandled.iter().any(|name| name.contains("MaxLength")),
+        label
+            .unhandled
+            .iter()
+            .any(|name| name.contains("MaxLength")),
         "sh:maxLength must be named in PropertyShape.unhandled, got: {:?}",
         label.unhandled
     );
