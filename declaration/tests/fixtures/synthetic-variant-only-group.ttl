@@ -1,0 +1,100 @@
+# SYNTHETIC, not a real connector. Exercises contreforts-core#35: build_groups
+# (src/model.rs) is called only with Declaration's flat, top-level `properties`
+# list -- built before `variants` is even folded in -- so it never walks
+# `variants[].properties` when collecting sh:group -> GroupDescriptor. Today
+# that is complete for every real connector: all 45 real sh:group triples
+# precede their own connector's sh:xone list in its own declaration.ttl
+# (verified by grep: caldav's 8 end at line 329, its sh:xone opens at line
+# 347; o365's 9 end at line 355, its sh:xone opens at line 374). But
+# build_variants resolves a variant property's own `.group` from the exact
+# same presentation map build_property_shape reads for the flat list -- so a
+# variant property carrying its own sh:group produces a PropertyShape.group
+# with no matching GroupDescriptor anywhere in Declaration.groups: a
+# reference no consumer can resolve a label/order for, the same "absence
+# presenting as success" shape GroupDescriptor::declared already closes for a
+# dangling TOP-LEVEL sh:group reference (see dangling-group-reference.ttl) --
+# this is the variant-scoped sibling of that gap.
+#
+# vog:VariantOnlyGroup below is referenced ONLY inside the "fast" sh:xone
+# alternative's own copy of vog:fastField. It never appears anywhere in the
+# flat sh:property list -- vog:label and vog:mode both use vog:GeneralGroup
+# instead, and the flat restatements of vog:fastField/vog:slowField carry no
+# sh:group at all. This is deliberate: it is what makes the test non-vacuous.
+# A "fix" that unions groups from the flat properties list alone (ignoring
+# variants entirely) still cannot see vog:VariantOnlyGroup, because it is not
+# there to be seen -- only walking variants[].properties finds it.
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix vog:          <https://contreforts.ds-labs.org/ontologies/variant-only-group-test#> .
+
+vog:VariantOnlyConnectorShape a sh:NodeShape ;
+    sh:targetClass vog:VariantOnlyConnector ;
+    contreforts:category "test-only" ;
+    contreforts:uiShape "discriminated-union" ;
+    sh:property [
+        sh:path vog:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group vog:GeneralGroup ;
+        sh:order 1 ;
+    ] ;
+    sh:property [
+        sh:path vog:mode ;
+        sh:name "Mode" ;
+        sh:in ( "fast" "slow" ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:group vog:GeneralGroup ;
+        sh:order 2 ;
+    ] ;
+    sh:property [
+        sh:path vog:fastField ;
+        sh:name "Fast field" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:group vog:GeneralGroup ;
+        sh:order 3 ;
+    ] ;
+    sh:property [
+        sh:path vog:slowField ;
+        sh:name "Slow field" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:group vog:GeneralGroup ;
+        sh:order 4 ;
+    ] ;
+    sh:xone (
+        [
+            a sh:NodeShape ;
+            sh:property [ sh:path vog:mode ; sh:in ( "fast" ) ; sh:minCount 1 ; sh:maxCount 1 ] ;
+            sh:property [
+                sh:path vog:fastField ;
+                sh:datatype xsd:string ;
+                sh:minCount 1 ;
+                sh:maxCount 1 ;
+                # The defect this fixture exists for: this alternative's own
+                # copy of fastField carries its own sh:group, naming a group
+                # that build_groups (flat-list-only) can never see.
+                sh:group vog:VariantOnlyGroup ;
+            ] ;
+            sh:property [ sh:path vog:slowField ; sh:maxCount 0 ]
+        ]
+        [
+            a sh:NodeShape ;
+            sh:property [ sh:path vog:mode ; sh:in ( "slow" ) ; sh:minCount 1 ; sh:maxCount 1 ] ;
+            sh:property [ sh:path vog:slowField ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+            sh:property [ sh:path vog:fastField ; sh:maxCount 0 ]
+        ]
+    ) .
+
+vog:GeneralGroup a sh:PropertyGroup ;
+    rdfs:label "General" ;
+    sh:order 1 .
+
+vog:VariantOnlyGroup a sh:PropertyGroup ;
+    rdfs:label "Variant Only" ;
+    sh:order 2 .

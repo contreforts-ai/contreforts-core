@@ -29,6 +29,10 @@ const SYNTHETIC_UNHANDLED_CONSTRAINT: &str =
 const DANGLING_GROUP_REFERENCE: &str = include_str!("fixtures/dangling-group-reference.ttl");
 const NODE_SHAPE_NAME_VS_LABEL: &str = include_str!("fixtures/node-shape-name-vs-label.ttl");
 const GROUP_ORDERING_NONE_LAST: &str = include_str!("fixtures/group-ordering-none-last.ttl");
+// contreforts-core#35: a group referenced only inside an sh:xone alternative's own property,
+// never in the flat properties list.
+const SYNTHETIC_VARIANT_ONLY_GROUP: &str =
+    include_str!("fixtures/synthetic-variant-only-group.ttl");
 
 #[test]
 fn hardened_o365_declaration_validates_clean() {
@@ -875,5 +879,66 @@ fn groups_with_no_declared_order_sort_last_not_first() {
         ],
         "groups must sort by (order, iri) with a None order sorted last, regardless of the \
          order groups were declared or referenced in; got: {summaries:?}"
+    );
+}
+
+// contreforts-core#35: `build_groups` (src/model.rs) is called with `Declaration`'s flat,
+// top-level `properties` only, before `variants` is even folded in -- so a group referenced
+// ONLY inside an sh:xone alternative's own property currently produces a `PropertyShape.group`
+// with no matching `GroupDescriptor` anywhere in `Declaration.groups`. Zero real fixtures
+// exercise this today (all 45 real sh:group triples tree-wide precede their own connector's
+// sh:xone list), so this is exercised only by the synthetic fixture below.
+#[test]
+fn a_group_referenced_only_by_a_variant_property_still_gets_a_group_descriptor() {
+    let declaration = validate(SYNTHETIC_VARIANT_ONLY_GROUP)
+        .expect("synthetic-variant-only-group.ttl must validate clean");
+
+    const VARIANT_ONLY_GROUP_IRI: &str =
+        "https://contreforts.ds-labs.org/ontologies/variant-only-group-test#VariantOnlyGroup";
+
+    // Non-vacuity guard: vog:VariantOnlyGroup must NOT be reachable from the flat properties
+    // list at all. If it leaked in there, even the CURRENT, unfixed `build_groups` (which only
+    // ever walks `properties`) would already report a descriptor for it, and the assertion
+    // below on `declaration.groups` would pass for the wrong reason -- proving nothing about
+    // whether variants are actually walked.
+    assert!(
+        !declaration
+            .properties
+            .iter()
+            .any(|p| p.group.as_deref() == Some(VARIANT_ONLY_GROUP_IRI)),
+        "vog:VariantOnlyGroup must not be referenced by any FLAT top-level property -- it is \
+         deliberately variant-scoped only; if this assertion ever fails, the fixture itself is \
+         broken and the test below is vacuous"
+    );
+
+    // The variant property itself really does carry the group, resolved via the same
+    // presentation map the flat path uses (build_property_shape is shared by both).
+    let fast_alternative = declaration
+        .variants
+        .iter()
+        .find(|v| v.discriminant_value == "fast")
+        .expect("the \"fast\" sh:xone alternative is present");
+    let fast_field = fast_alternative
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("#fastField"))
+        .expect("fastField is present in the \"fast\" alternative");
+    assert_eq!(
+        fast_field.group.as_deref(),
+        Some(VARIANT_ONLY_GROUP_IRI),
+        "the fast alternative's own copy of fastField must carry sh:group -- confirming the \
+         PropertyShape.group side of the defect is real, not just a fixture-authoring mistake"
+    );
+
+    // The point of #35 itself: that group reference must be resolvable to a GroupDescriptor,
+    // not merely present as a dangling `PropertyShape.group` nothing else in `Declaration`
+    // explains.
+    let summaries: Vec<_> = declaration.groups.iter().map(group_summary).collect();
+    assert!(
+        summaries.iter().any(|(local, _, _)| *local == "VariantOnlyGroup"),
+        "vog:VariantOnlyGroup, referenced only inside the \"fast\" sh:xone alternative's own \
+         fastField, must still produce a GroupDescriptor in Declaration.groups -- build_groups \
+         must walk variants[].properties too (unioned by IRI with the flat set), not only the \
+         flat properties list; got: {summaries:?}"
     );
 }
