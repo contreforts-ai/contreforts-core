@@ -127,6 +127,21 @@ pub struct PropertyShape {
     /// negative `sh:minLength` (it would be invalid SHACL), so this is
     /// exercised only in reasoning, not by any fixture.
     pub min_length: Option<u32>,
+    /// The raw `i32` value of a malformed (negative) `sh:minLength`
+    /// (contreforts-core#31), distinct from both `min_length: Some(_)`
+    /// (a legal, non-negative value) and the genuinely absent case (both
+    /// this field and `min_length` are `None`). `None` whenever
+    /// `u32::try_from` above succeeds or `sh:minLength` is absent
+    /// entirely -- only a negative value populates this. Deliberately not
+    /// folded into `unhandled`: that field's contract (phase F W1) is "a
+    /// constraint KIND this crate has no field for", and `sh:minLength`
+    /// has a dedicated field (`min_length` above); a malformed VALUE of a
+    /// constraint that already has a field is a different failure mode
+    /// and would corrupt `unhandled`'s contract if folded in. No real
+    /// declaration has ever carried a negative `sh:minLength` (all 7 real
+    /// values are `1`), so this is exercised only by a synthetic
+    /// fixture.
+    pub min_length_invalid: Option<i32>,
     /// `sh:nodeKind`'s value (contreforts/contreforts-workspace#60, phase F
     /// item W1), reported as the full SHACL vocabulary IRI (e.g.
     /// `"http://www.w3.org/ns/shacl#Literal"`), matching how `datatype`
@@ -590,6 +605,7 @@ fn build_property_shape(
     let mut min_inclusive = None;
     let mut max_inclusive = None;
     let mut min_length = None;
+    let mut min_length_invalid = None;
     let mut node_kind = None;
     let mut unhandled = Vec::new();
     for constraint in &shape.constraints {
@@ -616,7 +632,18 @@ fn build_property_shape(
             // previously-dropped-by-`_ => {}` defect as the four above.
             // See `min_length`'s doc comment on `PropertyShape` for why
             // this is `u32::try_from`, not `as u32`.
-            Constraint::MinLength(c) => min_length = u32::try_from(c.0).ok(),
+            //
+            // contreforts-core#31: `u32::try_from` fails for a negative
+            // (malformed) value -- shacl-rust 0.2.9's own parser performs
+            // no sign check, so a hand-authored graph can carry one.
+            // Rather than let that failure collapse `min_length` to
+            // `None` (indistinguishable from "no sh:minLength at all"),
+            // the malformed raw value is recorded on `min_length_invalid`
+            // instead, leaving `min_length` `None` either way.
+            Constraint::MinLength(c) => match u32::try_from(c.0) {
+                Ok(v) => min_length = Some(v),
+                Err(_) => min_length_invalid = Some(c.0),
+            },
             Constraint::NodeKind(c) => node_kind = Some(node_kind_iri(c.0).to_string()),
             // W1's own point (see `PropertyShape::unhandled`'s doc
             // comment): every other constraint kind still has no field to
@@ -654,6 +681,7 @@ fn build_property_shape(
         min_inclusive,
         max_inclusive,
         min_length,
+        min_length_invalid,
         node_kind,
         unhandled,
     })
