@@ -335,11 +335,12 @@ pub struct Declaration {
     /// groups tree-wide ("Connection" alone appears 6 times), so a
     /// label-keyed set would silently under-count. Sorted by `(order,
     /// iri)` with a `None` order sorted last, so the ordering is total
-    /// and deterministic regardless of declaration or fixture order. Does
-    /// NOT walk `variants[].properties` -- an `sh:xone` alternative's own
-    /// fields contribute no groups to this list (see
-    /// `Declaration.properties`'s own doc comment on why variants are
-    /// scoped out of the flat view).
+    /// and deterministic regardless of declaration or fixture order. Also
+    /// walks `variants[].properties` (contreforts-core#35): an `sh:xone`
+    /// alternative's own fields resolve `.group` through the same
+    /// presentation map the flat path uses, so a variant-only `sh:group`
+    /// still gets a `GroupDescriptor` here, unioned by IRI with the flat
+    /// set -- see `build_groups`.
     pub groups: Vec<GroupDescriptor>,
     /// The connector's own top-level fields: the direct `sh:property`
     /// children of `shape`. Deliberately does NOT walk into `sh:xone`
@@ -493,24 +494,31 @@ fn build_group_descriptor(graph: &oxigraph::model::Graph, iri: &str) -> GroupDes
     }
 }
 
-/// `Declaration.groups`: every distinct IRI named by `sh:group` on
-/// `properties` -- the connector's own flat, top-level field list, built
-/// before any `sh:xone` variant is even consulted, so this never sees a
-/// variant's own groups (see `Declaration.groups`'s own doc comment).
-/// Deduplicated by IRI, in first-seen order, then sorted by `(order,
-/// iri)` with a `None` order sorted last -- comparing `(order.is_none(),
-/// order, iri)` rather than deriving `Ord` on `Option<i64>` directly,
-/// because `Option`'s derived order puts `None` *first* (`None <
-/// Some(_)`), which is the wrong end (see
+/// `Declaration.groups`: every distinct IRI named by `sh:group` on either
+/// `properties` (the connector's own flat, top-level field list) or any
+/// `sh:xone` variant's own `properties` (contreforts-core#35) -- unioned
+/// by IRI across both so a group referenced only inside a variant
+/// alternative's own copy of a property still gets a `GroupDescriptor`,
+/// rather than being a dangling `PropertyShape.group` nothing in
+/// `Declaration.groups` can resolve a label/order for. Deduplicated by
+/// IRI, in first-seen order (flat properties first, then each variant in
+/// order), then sorted by `(order, iri)` with a `None` order sorted last
+/// -- comparing `(order.is_none(), order, iri)` rather than deriving
+/// `Ord` on `Option<i64>` directly, because `Option`'s derived order puts
+/// `None` *first* (`None < Some(_)`), which is the wrong end (see
 /// `declaration/tests/fixtures/group-ordering-none-last.ttl`, built
 /// specifically to catch that).
 fn build_groups(
     graph: &oxigraph::model::Graph,
     properties: &[PropertyShape],
+    variants: &[DeclarationVariant],
 ) -> Vec<GroupDescriptor> {
     let mut seen = std::collections::HashSet::new();
     let mut groups: Vec<GroupDescriptor> = Vec::new();
-    for property in properties {
+    for property in properties
+        .iter()
+        .chain(variants.iter().flat_map(|v| v.properties.iter()))
+    {
         let Some(iri) = property.group.as_deref() else {
             continue;
         };
@@ -872,7 +880,7 @@ fn build_declaration_for_shape(
 
     let variants = build_variants(shape, graph, presentation);
     merge_variant_requiredness(&mut properties, &variants);
-    let groups = build_groups(graph, &properties);
+    let groups = build_groups(graph, &properties, &variants);
 
     Ok(Declaration {
         shape: shape.node.to_string(),
