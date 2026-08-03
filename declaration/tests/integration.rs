@@ -938,7 +938,9 @@ fn a_group_referenced_only_by_a_variant_property_still_gets_a_group_descriptor()
     // explains.
     let summaries: Vec<_> = declaration.groups.iter().map(group_summary).collect();
     assert!(
-        summaries.iter().any(|(local, _, _)| *local == "VariantOnlyGroup"),
+        summaries
+            .iter()
+            .any(|(local, _, _)| *local == "VariantOnlyGroup"),
         "vog:VariantOnlyGroup, referenced only inside the \"fast\" sh:xone alternative's own \
          fastField, must still produce a GroupDescriptor in Declaration.groups -- build_groups \
          must walk variants[].properties too (unioned by IRI with the flat set), not only the \
