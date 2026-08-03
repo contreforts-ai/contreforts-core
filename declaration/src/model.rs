@@ -127,6 +127,21 @@ pub struct PropertyShape {
     /// negative `sh:minLength` (it would be invalid SHACL), so this is
     /// exercised only in reasoning, not by any fixture.
     pub min_length: Option<u32>,
+    /// The raw `i32` value of a malformed (negative) `sh:minLength`
+    /// (contreforts-core#31), distinct from both `min_length: Some(_)`
+    /// (a legal, non-negative value) and the genuinely absent case (both
+    /// this field and `min_length` are `None`). `None` whenever
+    /// `u32::try_from` above succeeds or `sh:minLength` is absent
+    /// entirely -- only a negative value populates this. Deliberately not
+    /// folded into `unhandled`: that field's contract (phase F W1) is "a
+    /// constraint KIND this crate has no field for", and `sh:minLength`
+    /// has a dedicated field (`min_length` above); a malformed VALUE of a
+    /// constraint that already has a field is a different failure mode
+    /// and would corrupt `unhandled`'s contract if folded in. No real
+    /// declaration has ever carried a negative `sh:minLength` (all 7 real
+    /// values are `1`), so this is exercised only by a synthetic
+    /// fixture.
+    pub min_length_invalid: Option<i32>,
     /// `sh:nodeKind`'s value (contreforts/contreforts-workspace#60, phase F
     /// item W1), reported as the full SHACL vocabulary IRI (e.g.
     /// `"http://www.w3.org/ns/shacl#Literal"`), matching how `datatype`
@@ -335,11 +350,12 @@ pub struct Declaration {
     /// groups tree-wide ("Connection" alone appears 6 times), so a
     /// label-keyed set would silently under-count. Sorted by `(order,
     /// iri)` with a `None` order sorted last, so the ordering is total
-    /// and deterministic regardless of declaration or fixture order. Does
-    /// NOT walk `variants[].properties` -- an `sh:xone` alternative's own
-    /// fields contribute no groups to this list (see
-    /// `Declaration.properties`'s own doc comment on why variants are
-    /// scoped out of the flat view).
+    /// and deterministic regardless of declaration or fixture order. Also
+    /// walks `variants[].properties` (contreforts-core#35): an `sh:xone`
+    /// alternative's own fields resolve `.group` through the same
+    /// presentation map the flat path uses, so a variant-only `sh:group`
+    /// still gets a `GroupDescriptor` here, unioned by IRI with the flat
+    /// set -- see `build_groups`.
     pub groups: Vec<GroupDescriptor>,
     /// The connector's own top-level fields: the direct `sh:property`
     /// children of `shape`. Deliberately does NOT walk into `sh:xone`
@@ -493,24 +509,31 @@ fn build_group_descriptor(graph: &oxigraph::model::Graph, iri: &str) -> GroupDes
     }
 }
 
-/// `Declaration.groups`: every distinct IRI named by `sh:group` on
-/// `properties` -- the connector's own flat, top-level field list, built
-/// before any `sh:xone` variant is even consulted, so this never sees a
-/// variant's own groups (see `Declaration.groups`'s own doc comment).
-/// Deduplicated by IRI, in first-seen order, then sorted by `(order,
-/// iri)` with a `None` order sorted last -- comparing `(order.is_none(),
-/// order, iri)` rather than deriving `Ord` on `Option<i64>` directly,
-/// because `Option`'s derived order puts `None` *first* (`None <
-/// Some(_)`), which is the wrong end (see
+/// `Declaration.groups`: every distinct IRI named by `sh:group` on either
+/// `properties` (the connector's own flat, top-level field list) or any
+/// `sh:xone` variant's own `properties` (contreforts-core#35) -- unioned
+/// by IRI across both so a group referenced only inside a variant
+/// alternative's own copy of a property still gets a `GroupDescriptor`,
+/// rather than being a dangling `PropertyShape.group` nothing in
+/// `Declaration.groups` can resolve a label/order for. Deduplicated by
+/// IRI, in first-seen order (flat properties first, then each variant in
+/// order), then sorted by `(order, iri)` with a `None` order sorted last
+/// -- comparing `(order.is_none(), order, iri)` rather than deriving
+/// `Ord` on `Option<i64>` directly, because `Option`'s derived order puts
+/// `None` *first* (`None < Some(_)`), which is the wrong end (see
 /// `declaration/tests/fixtures/group-ordering-none-last.ttl`, built
 /// specifically to catch that).
 fn build_groups(
     graph: &oxigraph::model::Graph,
     properties: &[PropertyShape],
+    variants: &[DeclarationVariant],
 ) -> Vec<GroupDescriptor> {
     let mut seen = std::collections::HashSet::new();
     let mut groups: Vec<GroupDescriptor> = Vec::new();
-    for property in properties {
+    for property in properties
+        .iter()
+        .chain(variants.iter().flat_map(|v| v.properties.iter()))
+    {
         let Some(iri) = property.group.as_deref() else {
             continue;
         };
@@ -582,6 +605,7 @@ fn build_property_shape(
     let mut min_inclusive = None;
     let mut max_inclusive = None;
     let mut min_length = None;
+    let mut min_length_invalid = None;
     let mut node_kind = None;
     let mut unhandled = Vec::new();
     for constraint in &shape.constraints {
@@ -608,7 +632,18 @@ fn build_property_shape(
             // previously-dropped-by-`_ => {}` defect as the four above.
             // See `min_length`'s doc comment on `PropertyShape` for why
             // this is `u32::try_from`, not `as u32`.
-            Constraint::MinLength(c) => min_length = u32::try_from(c.0).ok(),
+            //
+            // contreforts-core#31: `u32::try_from` fails for a negative
+            // (malformed) value -- shacl-rust 0.2.9's own parser performs
+            // no sign check, so a hand-authored graph can carry one.
+            // Rather than let that failure collapse `min_length` to
+            // `None` (indistinguishable from "no sh:minLength at all"),
+            // the malformed raw value is recorded on `min_length_invalid`
+            // instead, leaving `min_length` `None` either way.
+            Constraint::MinLength(c) => match u32::try_from(c.0) {
+                Ok(v) => min_length = Some(v),
+                Err(_) => min_length_invalid = Some(c.0),
+            },
             Constraint::NodeKind(c) => node_kind = Some(node_kind_iri(c.0).to_string()),
             // W1's own point (see `PropertyShape::unhandled`'s doc
             // comment): every other constraint kind still has no field to
@@ -646,6 +681,7 @@ fn build_property_shape(
         min_inclusive,
         max_inclusive,
         min_length,
+        min_length_invalid,
         node_kind,
         unhandled,
     })
@@ -872,7 +908,7 @@ fn build_declaration_for_shape(
 
     let variants = build_variants(shape, graph, presentation);
     merge_variant_requiredness(&mut properties, &variants);
-    let groups = build_groups(graph, &properties);
+    let groups = build_groups(graph, &properties, &variants);
 
     Ok(Declaration {
         shape: shape.node.to_string(),

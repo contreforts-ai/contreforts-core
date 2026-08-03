@@ -29,6 +29,13 @@ const SYNTHETIC_UNHANDLED_CONSTRAINT: &str =
 const DANGLING_GROUP_REFERENCE: &str = include_str!("fixtures/dangling-group-reference.ttl");
 const NODE_SHAPE_NAME_VS_LABEL: &str = include_str!("fixtures/node-shape-name-vs-label.ttl");
 const GROUP_ORDERING_NONE_LAST: &str = include_str!("fixtures/group-ordering-none-last.ttl");
+// contreforts-core#35: a group referenced only inside an sh:xone alternative's own property,
+// never in the flat properties list.
+const SYNTHETIC_VARIANT_ONLY_GROUP: &str =
+    include_str!("fixtures/synthetic-variant-only-group.ttl");
+// contreforts-core#31: a malformed (negative) sh:minLength, distinct from an absent one.
+const SYNTHETIC_NEGATIVE_MIN_LENGTH: &str =
+    include_str!("fixtures/synthetic-negative-min-length.ttl");
 
 #[test]
 fn hardened_o365_declaration_validates_clean() {
@@ -875,5 +882,127 @@ fn groups_with_no_declared_order_sort_last_not_first() {
         ],
         "groups must sort by (order, iri) with a None order sorted last, regardless of the \
          order groups were declared or referenced in; got: {summaries:?}"
+    );
+}
+
+// contreforts-core#35: `build_groups` (src/model.rs) is called with `Declaration`'s flat,
+// top-level `properties` only, before `variants` is even folded in -- so a group referenced
+// ONLY inside an sh:xone alternative's own property currently produces a `PropertyShape.group`
+// with no matching `GroupDescriptor` anywhere in `Declaration.groups`. Zero real fixtures
+// exercise this today (all 45 real sh:group triples tree-wide precede their own connector's
+// sh:xone list), so this is exercised only by the synthetic fixture below.
+#[test]
+fn a_group_referenced_only_by_a_variant_property_still_gets_a_group_descriptor() {
+    let declaration = validate(SYNTHETIC_VARIANT_ONLY_GROUP)
+        .expect("synthetic-variant-only-group.ttl must validate clean");
+
+    const VARIANT_ONLY_GROUP_IRI: &str =
+        "https://contreforts.ds-labs.org/ontologies/variant-only-group-test#VariantOnlyGroup";
+
+    // Non-vacuity guard: vog:VariantOnlyGroup must NOT be reachable from the flat properties
+    // list at all. If it leaked in there, even the CURRENT, unfixed `build_groups` (which only
+    // ever walks `properties`) would already report a descriptor for it, and the assertion
+    // below on `declaration.groups` would pass for the wrong reason -- proving nothing about
+    // whether variants are actually walked.
+    assert!(
+        !declaration
+            .properties
+            .iter()
+            .any(|p| p.group.as_deref() == Some(VARIANT_ONLY_GROUP_IRI)),
+        "vog:VariantOnlyGroup must not be referenced by any FLAT top-level property -- it is \
+         deliberately variant-scoped only; if this assertion ever fails, the fixture itself is \
+         broken and the test below is vacuous"
+    );
+
+    // The variant property itself really does carry the group, resolved via the same
+    // presentation map the flat path uses (build_property_shape is shared by both).
+    let fast_alternative = declaration
+        .variants
+        .iter()
+        .find(|v| v.discriminant_value == "fast")
+        .expect("the \"fast\" sh:xone alternative is present");
+    let fast_field = fast_alternative
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("#fastField"))
+        .expect("fastField is present in the \"fast\" alternative");
+    assert_eq!(
+        fast_field.group.as_deref(),
+        Some(VARIANT_ONLY_GROUP_IRI),
+        "the fast alternative's own copy of fastField must carry sh:group -- confirming the \
+         PropertyShape.group side of the defect is real, not just a fixture-authoring mistake"
+    );
+
+    // The point of #35 itself: that group reference must be resolvable to a GroupDescriptor,
+    // not merely present as a dangling `PropertyShape.group` nothing else in `Declaration`
+    // explains.
+    let summaries: Vec<_> = declaration.groups.iter().map(group_summary).collect();
+    assert!(
+        summaries
+            .iter()
+            .any(|(local, _, _)| *local == "VariantOnlyGroup"),
+        "vog:VariantOnlyGroup, referenced only inside the \"fast\" sh:xone alternative's own \
+         fastField, must still produce a GroupDescriptor in Declaration.groups -- build_groups \
+         must walk variants[].properties too (unioned by IRI with the flat set), not only the \
+         flat properties list; got: {summaries:?}"
+    );
+}
+
+// contreforts-core#31: `build_property_shape` (src/model.rs) captures sh:minLength via
+// `u32::try_from(c.0).ok()` -- a negative value fails that conversion and silently becomes
+// `None`, indistinguishable from "no sh:minLength declared at all". SHACL forbids a negative
+// sh:minLength, but shacl-rust 0.2.9's own parser (verified by reading
+// parser/constraints/min_length.rs: a bare `get_integer_value(...).map(Constraint::MinLength)`,
+// no sign check at all) does not enforce that at parse time, so the malformed value reaches
+// this crate's model construction unchanged. No real declaration.ttl carries a negative
+// sh:minLength (all 7 real values are `1`), so this is exercised only by the synthetic fixture
+// below.
+#[test]
+fn negative_min_length_is_recorded_as_invalid_not_absent() {
+    let declaration = validate(SYNTHETIC_NEGATIVE_MIN_LENGTH)
+        .expect("synthetic-negative-min-length.ttl must validate clean");
+
+    let label = declaration
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("#label"))
+        .expect("nml:label property present");
+    assert_eq!(
+        label.min_length, None,
+        "a malformed (negative) sh:minLength must not populate the valid-value field -- it is \
+         not a legal minLength"
+    );
+    assert_eq!(
+        label.min_length_invalid,
+        Some(-1),
+        "nml:label's sh:minLength -1 is malformed, not absent -- the raw i32 value must be \
+         recorded on a field of its own, so a malformed value is distinguishable from a \
+         genuinely absent sh:minLength (see nml:plainField below, where both fields are None). \
+         Not folded into `unhandled`: per phase F W1, that field's contract is 'a constraint \
+         KIND this crate has no field for' -- sh:minLength DOES have a field \
+         (`PropertyShape::min_length`); a malformed VALUE of a constraint that has a field is a \
+         different failure mode and would corrupt that contract if folded in"
+    );
+    assert!(
+        !label.unhandled.iter().any(|c| c == "MinLength"),
+        "a malformed sh:minLength must not be recorded in `unhandled` -- that field is reserved \
+         for constraint kinds with no dedicated field at all, and sh:minLength has one"
+    );
+
+    // Contrast: a property with no sh:minLength at all must leave BOTH fields None, not be
+    // confused with the malformed case above.
+    let plain = declaration
+        .properties
+        .iter()
+        .find(|p| p.path.ends_with("#plainField"))
+        .expect("nml:plainField property present");
+    assert_eq!(
+        plain.min_length, None,
+        "nml:plainField declares no sh:minLength at all; min_length must be None"
+    );
+    assert_eq!(
+        plain.min_length_invalid, None,
+        "nml:plainField declares no sh:minLength at all; min_length_invalid must also be None -- \
+         only a MALFORMED value populates it, not a genuinely absent one"
     );
 }

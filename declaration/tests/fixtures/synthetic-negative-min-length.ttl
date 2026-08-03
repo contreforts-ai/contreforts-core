@@ -1,0 +1,42 @@
+# SYNTHETIC, not a real connector. Exercises contreforts-core#31:
+# build_property_shape (src/model.rs) captures sh:minLength via
+# `u32::try_from(c.0).ok()`, where c.0 is the i32 shacl-rust's
+# MinLengthConstraint wraps. SHACL requires sh:minLength to be a
+# non-negative integer, but shacl-rust 0.2.9's own parser
+# (parser/constraints/min_length.rs) does not enforce that at parse time --
+# confirmed by reading it: it is `get_integer_value(...).map(Constraint::MinLength)`,
+# no sign check at all. So a hand-authored graph carrying a negative
+# sh:minLength parses clean into `Constraint::MinLength(MinLengthConstraint(-1))`,
+# and `u32::try_from(-1)` then fails, leaving `min_length: None` --
+# indistinguishable from "no sh:minLength constraint declared at all". No real
+# declaration.ttl carries a negative sh:minLength (all 7 real values are `1`,
+# verified by grep), so this fixture is the only place the malformed path is
+# exercised.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix nml:          <https://contreforts.ds-labs.org/ontologies/negative-min-length-test#> .
+
+nml:NegativeMinLengthConnectorShape a sh:NodeShape ;
+    sh:targetClass nml:NegativeMinLengthConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path nml:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        # The defect this fixture exists for: a negative sh:minLength, legal
+        # Turtle and accepted by shacl-rust's own parser (it performs no
+        # sign check), but invalid SHACL. `u32::try_from` must not silently
+        # turn this into the same `None` that an ABSENT sh:minLength produces.
+        sh:minLength -1 ;
+    ] ;
+    sh:property [
+        sh:path nml:plainField ;
+        sh:name "Plain field" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        # Deliberately no sh:minLength at all -- the genuinely-absent case,
+        # for contrast against nml:label's malformed one above.
+    ] .
