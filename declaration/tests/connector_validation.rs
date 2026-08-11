@@ -16,7 +16,7 @@
 use shacl_rust::rdf::read_graph_from_string;
 
 use contreforts_declaration::{
-    ConnectorDeclarations, ConnectorValidationOutcome, ConnectorValidator,
+    ConnectorDeclarations, ConnectorValidationOutcome, ConnectorValidator, WriteIntent,
 };
 
 /// Verbatim excerpt of `contreforts-connector-forgejo/declaration.ttl:185-224` -- the same real
@@ -125,6 +125,7 @@ fn validate_accepts_a_conforming_instance() {
 
     let outcome = validator
         .validate(
+            WriteIntent::Create,
             "https://contreforts.ds-labs.org/ontologies/forgejo#ForgejoConnector",
             &instance,
         )
@@ -151,6 +152,7 @@ fn validate_rejects_a_violating_instance_naming_the_property() {
 
     let violations = validator
         .validate(
+            WriteIntent::Create,
             "https://contreforts.ds-labs.org/ontologies/forgejo#ForgejoConnector",
             &instance,
         )
@@ -162,6 +164,50 @@ fn validate_rejects_a_violating_instance_naming_the_property() {
             .any(|v| v.field.as_deref() == Some("token")),
         "the rejection must name `token` as the violated property, got: {violations:?}"
     );
+}
+
+#[test]
+fn an_unscoped_declaration_behaves_identically_under_both_intents() {
+    // contreforts/contreforts-workspace#19, D8 amended: the ten connectors still carry a single
+    // shape with no `contreforts:writeIntent`, and absence means "applies to both".
+    //
+    // Catches: reading the absent term as create-only or update-only. Either would be invisible
+    // in the direction that still works and catastrophic in the other -- update-only would stop
+    // enforcing forgejo's required token on creation, create-only would stop enforcing anything
+    // at all on every update of every unmigrated connector. This is the regression test that
+    // makes it safe to land the mechanism before migrating any declaration.
+    let validator = forgejo_validator();
+    let instance = read_graph_from_string(
+        r#"
+        @prefix forgejo: <https://contreforts.ds-labs.org/ontologies/forgejo#> .
+
+        <https://contreforts.ds-labs.org/data/connector/forgejo/acme/main>
+            a forgejo:ForgejoConnector ;
+            forgejo:label "main" ;
+            forgejo:instanceUrl "https://git.example.com" .
+        "#,
+        "turtle",
+    )
+    .expect("valid turtle");
+
+    for intent in [WriteIntent::Create, WriteIntent::Update] {
+        match validator.validate(
+            intent,
+            "https://contreforts.ds-labs.org/ontologies/forgejo#ForgejoConnector",
+            &instance,
+        ) {
+            Ok(outcome) => panic!(
+                "forgejo declares one unscoped shape requiring `token`, so a write without it \
+                 must be rejected under {intent:?} too -- got {outcome:?}"
+            ),
+            Err(violations) => assert!(
+                violations
+                    .iter()
+                    .any(|v| v.field.as_deref() == Some("token")),
+                "under {intent:?} the rejection must name `token`, got: {violations:?}"
+            ),
+        }
+    }
 }
 
 #[test]
@@ -230,6 +276,7 @@ fn unvalidated_kinds_and_write_counts_track_the_case_2_policy() {
 
     let outcome = validator
         .validate(
+            WriteIntent::Create,
             "https://contreforts.ds-labs.org/ontologies/core#ErpNextConnector",
             &instance,
         )
@@ -239,5 +286,189 @@ fn unvalidated_kinds_and_write_counts_track_the_case_2_policy() {
         validator.unvalidated_write_count(),
         1,
         "the case-2 write must be counted, not silently passed through unlogged"
+    );
+}
+
+// ---------------------------------------------------------------------
+// D8's create-versus-update asymmetry
+// (contreforts/contreforts-workspace#19, "D8 amended -- 2026-08-11")
+// ---------------------------------------------------------------------
+
+/// SYNTHETIC. The D8 arrangement, minimal: two node shapes over one `sh:targetClass`, differing
+/// in exactly one triple -- `sh:minCount 1` on the secret, present on the create shape and
+/// absent from the update shape. Everything else is identical on purpose, so a test that passes
+/// for the wrong reason (because the two shapes differ somewhere else as well) is not possible.
+///
+/// `sh:pattern` on the secret is on **both** shapes deliberately: it is what makes
+/// `an_update_still_validates_the_secret_it_was_given` able to fail. "Absent means unchanged" is
+/// one rule, not a licence to stop checking updates, and the cheapest wrong implementation of
+/// this whole feature -- skip validation entirely when the intent is `Update` -- passes every
+/// other test in this section.
+const WIDGET_D8_TTL: &str = r#"
+    @prefix sh:          <http://www.w3.org/ns/shacl#> .
+    @prefix xsd:         <http://www.w3.org/2001/XMLSchema#> .
+    @prefix contreforts: <https://contreforts.ds-labs.org/ontologies/declaration#> .
+    @prefix widget:      <https://contreforts.ds-labs.org/ontologies/widget#> .
+
+    widget:WidgetCreateShape a sh:NodeShape ;
+        sh:targetClass widget:Widget ;
+        contreforts:writeIntent "create" ;
+        sh:property [
+            sh:path widget:label ;
+            sh:datatype xsd:string ;
+            sh:minCount 1 ;
+            sh:maxCount 1 ;
+        ] ;
+        sh:property [
+            sh:path widget:apiToken ;
+            sh:datatype xsd:string ;
+            sh:minCount 1 ;
+            sh:maxCount 1 ;
+            sh:pattern "^tok-" ;
+            contreforts:secret true ;
+        ] .
+
+    widget:WidgetUpdateShape a sh:NodeShape ;
+        sh:targetClass widget:Widget ;
+        contreforts:writeIntent "update" ;
+        sh:property [
+            sh:path widget:label ;
+            sh:datatype xsd:string ;
+            sh:minCount 1 ;
+            sh:maxCount 1 ;
+        ] ;
+        sh:property [
+            sh:path widget:apiToken ;
+            sh:datatype xsd:string ;
+            sh:maxCount 1 ;
+            sh:pattern "^tok-" ;
+            contreforts:secret true ;
+        ] .
+"#;
+
+const WIDGET_CLASS: &str = "https://contreforts.ds-labs.org/ontologies/widget#Widget";
+
+fn widget_validator() -> ConnectorValidator {
+    ConnectorValidator::new(WIDGET_D8_TTL, &[("widget", "Widget")])
+        .expect("the D8 pair is valid SHACL and covers both intents")
+}
+
+/// A widget instance carrying `widget:apiToken` only when `token` is `Some` -- the two states
+/// the asymmetry is about, built by one function so the "absent" and "present" cases cannot
+/// drift apart in any other field.
+fn widget_instance(token: Option<&str>) -> oxigraph::model::Graph {
+    let token_triple = match token {
+        Some(value) => format!("widget:apiToken \"{value}\" ;"),
+        None => String::new(),
+    };
+    let ttl = format!(
+        r#"
+        @prefix widget: <https://contreforts.ds-labs.org/ontologies/widget#> .
+
+        <https://contreforts.ds-labs.org/data/connector/widget/acme/main>
+            a widget:Widget ;
+            {token_triple}
+            widget:label "main" .
+        "#
+    );
+    read_graph_from_string(&ttl, "turtle").expect("valid turtle")
+}
+
+#[test]
+fn an_absent_secret_is_refused_on_create() {
+    // The first half of the asymmetry. Catches: `validate` running the update shapes (or all
+    // shapes minus the create-scoped ones) for `WriteIntent::Create` -- i.e. a selection with
+    // its two arms transposed, or a `shapes_for` that ignores its argument and returns
+    // `update_shapes`. Without this, a connector could be created with no credential at all.
+    let violations = widget_validator()
+        .validate(WriteIntent::Create, WIDGET_CLASS, &widget_instance(None))
+        .expect_err("creating a widget without its required secret must be refused");
+
+    assert!(
+        violations
+            .iter()
+            .any(|v| v.field.as_deref() == Some("apiToken")),
+        "the refusal must name `apiToken`, got: {violations:?}"
+    );
+}
+
+#[test]
+fn an_absent_secret_is_accepted_on_update() {
+    // The second half, and the one the whole two-shape design exists for: D8 makes the secret
+    // write-only, so a form that submits nothing for it means "unchanged", not "clear".
+    //
+    // Catches: `validate` running every parsed shape regardless of intent (the pre-D8
+    // behaviour, and the state this file would be in if `shapes_for` were deleted) -- the
+    // create shape's `sh:minCount 1` would then fire on an update and make it impossible to
+    // change a widget's label without re-typing its token.
+    let outcome = widget_validator()
+        .validate(WriteIntent::Update, WIDGET_CLASS, &widget_instance(None))
+        .expect("an absent secret means unchanged on update, not a violation");
+
+    assert_eq!(outcome, ConnectorValidationOutcome::Conforms);
+}
+
+#[test]
+fn a_present_secret_is_accepted_under_both_intents() {
+    // The direction people forget. Catches an implementation that achieves the asymmetry by
+    // making the two shapes mutually exclusive rather than differently strict -- e.g. an update
+    // shape written with `sh:maxCount 0` on the secret, which would satisfy both tests above
+    // and then reject every legitimate credential rotation.
+    let validator = widget_validator();
+    for intent in [WriteIntent::Create, WriteIntent::Update] {
+        let outcome = validator
+            .validate(intent, WIDGET_CLASS, &widget_instance(Some("tok-abc")))
+            .unwrap_or_else(|violations| {
+                panic!("a valid secret must be accepted under {intent:?}, got: {violations:?}")
+            });
+        assert_eq!(outcome, ConnectorValidationOutcome::Conforms, "{intent:?}");
+    }
+}
+
+#[test]
+fn an_update_still_validates_the_secret_it_was_given() {
+    // "Absent means unchanged" is not "updates are unvalidated". Catches the cheapest wrong
+    // implementation of this feature -- short-circuit `validate` to `Ok(Conforms)` whenever the
+    // intent is `Update` -- which every other test in this section passes.
+    let violations = widget_validator()
+        .validate(
+            WriteIntent::Update,
+            WIDGET_CLASS,
+            &widget_instance(Some("not-a-token")),
+        )
+        .expect_err("a malformed secret is still a violation on update");
+
+    assert!(
+        violations
+            .iter()
+            .any(|v| v.field.as_deref() == Some("apiToken")),
+        "the refusal must name `apiToken`, got: {violations:?}"
+    );
+}
+
+#[test]
+fn a_declaration_covering_only_one_intent_is_refused_at_construction() {
+    // Catches: `ConnectorValidator::new` accepting a half-written pair. A class with a create
+    // shape and no update shape does not reject updates -- SHACL resolves zero focus nodes for
+    // the uncovered intent and reports conformance -- so every update would be accepted with
+    // nothing checked, reported to the caller as `Ok(Conforms)`. Refusing to build the
+    // validator is the only point at which that is detectable.
+    let create_only = WIDGET_D8_TTL
+        .split("widget:WidgetUpdateShape")
+        .next()
+        .expect("split always yields a first part");
+
+    let error = ConnectorValidator::new(create_only, &[("widget", "Widget")])
+        .err()
+        .expect("a create shape with no update shape must not build a validator");
+
+    let message = error.to_string();
+    assert!(
+        message.contains("update"),
+        "the error must name the uncovered intent, got: {message}"
+    );
+    assert!(
+        message.contains("Widget"),
+        "the error must name the class it is about, got: {message}"
     );
 }

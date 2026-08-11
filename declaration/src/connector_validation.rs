@@ -43,6 +43,27 @@
 //!      behaviour stays byte-for-byte identical across the relocation: it is still C7's job,
 //!      not D3a's.
 //!
+//! ## Create versus update (contreforts/contreforts-workspace#19, "D8 amended -- 2026-08-11")
+//!
+//! [`ConnectorValidator::validate`] takes a [`WriteIntent`] and validates against the shapes
+//! that declare themselves applicable to it. A required secret is required when a connector is
+//! *created* and absent-means-unchanged when it is *updated* -- D8 makes secrets write-only, so
+//! an update that carries no value for one is saying "unchanged", not "clear" -- and a single
+//! SHACL shape cannot state both, since `sh:minCount 1` either holds or it does not. A migrated
+//! connector therefore declares two shapes over one `sh:targetClass`, tagged
+//! `contreforts:writeIntent "create"` and `"update"`, and this module picks between them.
+//!
+//! The rule stays in the Turtle rather than becoming an exception in this file's Rust: a
+//! third-party connector author must be able to say "*my* secret is required at create", and a
+//! rule implemented here could only ever be written by contreforts. Nothing in this module knows
+//! that D8 is about secrets; it selects shapes, and what differs between a pair is the
+//! declaration's business. See `write_intent.rs` for the full argument, the rejected
+//! alternative, and why absence of the term means "applies to both".
+//!
+//! Nothing on disk carries the term yet -- migrating the ten connectors is a separate step -- so
+//! every declaration today is unscoped, both intents run the same shapes, and the only visible
+//! change is that a caller can no longer avoid saying which verb it is serving.
+//!
 //! Case 1 and case 2 are also, as of contreforts-kg#21, the *only* place `config_graph.rs`
 //! decides which namespace a connector's stored IRIs live in -- but as of contreforts-kg#23,
 //! that decision no longer reads `ConnectorValidator` itself. It reads
@@ -69,6 +90,8 @@ use shacl_rust::{
     Constraint, PathElement, Shape, Target, ValidationReport, parse_shapes,
     rdf::read_graph_from_string, validate as shacl_validate,
 };
+
+use crate::write_intent::{self, WriteIntent};
 
 /// One connector kind's class IRI and `short field name -> predicate IRI` mapping, read
 /// directly off its declaration in the injected product graph (contreforts-kg#21) --
@@ -147,11 +170,28 @@ impl<'a> ConnectorDeclarations<'a> {
     }
 }
 
-/// Find the one top-level shape in `shapes` whose `sh:targetClass` short name (the part after
-/// the last `#`/`/`) equals `type_name`, and read off its class IRI and field mapping -- the
-/// case-1 half of the policy documented at the top of this module. Returns `None` when no
-/// shape targets a class by that short name, i.e. case 2.
+/// Find the top-level shapes in `shapes` whose `sh:targetClass` short name (the part after the
+/// last `#`/`/`) equals `type_name`, and read off the class IRI and field mapping -- the case-1
+/// half of the policy documented at the top of this module. Returns `None` when no shape targets
+/// a class by that short name, i.e. case 2.
+///
+/// **Every** matching shape contributes, unioned, rather than only the first
+/// (contreforts/contreforts-workspace#19, D8 amended): after D8 a migrated connector declares
+/// *two* shapes over one `sh:targetClass` -- a create shape and an update shape -- and returning
+/// on the first match would have made the field map depend on which of the pair the shapes graph
+/// happened to yield first. The two agree about `sh:path` and `sh:datatype` by construction (the
+/// pair describes one connector; only requiredness differs), so the union is the same map either
+/// way -- but "the same either way" is a property of today's declarations, not of the code, and
+/// an ordering dependency that is currently harmless is exactly the kind that stops being
+/// harmless silently. For a single-shape declaration -- every one on disk today -- the union is
+/// identical to the old first-match behaviour.
+///
+/// `class_iri` still comes from the first match: the pair targets one class, so there is only one
+/// answer. Two genuinely different classes whose short names collide would be a namespace
+/// collision the C3 aggregator is responsible for, not something to resolve here.
 fn resolve_connector_iris(shapes: &[Shape<'static>], type_name: &str) -> Option<ConnectorIris> {
+    let mut resolved: Option<ConnectorIris> = None;
+
     for shape in shapes {
         for target in &shape.targets {
             let Target::Class(NamedOrBlankNodeRef::NamedNode(class_node)) = target else {
@@ -161,8 +201,12 @@ fn resolve_connector_iris(shapes: &[Shape<'static>], type_name: &str) -> Option<
                 continue;
             }
 
-            let mut field_iris: HashMap<String, String> = HashMap::new();
-            let mut field_datatypes: HashMap<String, String> = HashMap::new();
+            let iris = resolved.get_or_insert_with(|| ConnectorIris {
+                class_iri: class_node.as_str().to_string(),
+                field_iris: HashMap::new(),
+                field_datatypes: HashMap::new(),
+            });
+
             for prop in &shape.property_shapes {
                 let Some(path) = prop.path.as_ref() else {
                     continue;
@@ -171,24 +215,20 @@ fn resolve_connector_iris(shapes: &[Shape<'static>], type_name: &str) -> Option<
                     continue;
                 };
                 let short = short_field_name(pred.as_str());
-                field_iris.insert(short.clone(), pred.as_str().to_string());
+                iris.field_iris
+                    .insert(short.clone(), pred.as_str().to_string());
 
                 if let Some(datatype_iri) = prop.constraints.iter().find_map(|c| match c {
                     Constraint::Datatype(dt) => Some(dt.0.as_str().to_string()),
                     _ => None,
                 }) {
-                    field_datatypes.insert(short, datatype_iri);
+                    iris.field_datatypes.insert(short, datatype_iri);
                 }
             }
-
-            return Some(ConnectorIris {
-                class_iri: class_node.as_str().to_string(),
-                field_iris,
-                field_datatypes,
-            });
         }
     }
-    None
+
+    resolved
 }
 
 /// One SHACL constraint a written connector instance violated, formatted for a human
@@ -253,7 +293,16 @@ pub struct ConnectorValidator {
     // `shapes_graph` is cloned again on every validated write -- that clone cost is measured,
     // not avoided, by design; see contreforts-kg#19's report for actual numbers.
     shapes_graph: &'static Graph,
-    shapes: Vec<Shape<'static>>,
+    /// The shapes that apply when a connector is being **created**: every parsed shape whose
+    /// `contreforts:writeIntent` is `"create"` or absent (contreforts/contreforts-workspace#19,
+    /// D8 amended). Partitioned once at construction rather than filtered per write -- the
+    /// scope is a fact about the shapes graph, and re-deriving it on the hot path would re-read
+    /// the graph on every write for an answer that cannot have changed.
+    create_shapes: Vec<Shape<'static>>,
+    /// The shapes that apply when a connector is being **updated**: `"update"` or absent. An
+    /// unscoped shape is deliberately in both lists -- see [`crate::IntentScope`] for why
+    /// absence is permissive on the declaration's side.
+    update_shapes: Vec<Shape<'static>>,
     declared_target_classes: HashSet<String>,
     /// Case-1 kinds (contreforts-kg#21): `kind` -> the class/field IRIs read off its
     /// declaration, computed once here from the same `shapes` the validator itself uses. As of
@@ -278,6 +327,17 @@ impl ConnectorValidator {
     /// [`Self::unvalidated_kinds`] at construction time. `unvalidated_kinds` is exactly "kinds
     /// with no entry in `declared_connector_iris`" -- one computation, not two that could
     /// disagree about which kinds are declared.
+    ///
+    /// Fails on unparseable Turtle, on a shapes graph that is not well-formed SHACL, and -- as
+    /// of contreforts/contreforts-workspace#19's amended D8 -- on a `contreforts:writeIntent`
+    /// this crate cannot read, or a `sh:targetClass` covered for one write intent and not the
+    /// other. Both D8 failures are refused here rather than reported per write because both
+    /// would otherwise manifest as `Ok(Conforms)` on writes that were never checked; see the
+    /// inline comments below and `write_intent::coverage_gaps`.
+    ///
+    /// (Pre-existing and unchanged: the parsed graph is `Box::leak`ed before those checks run,
+    /// so a rejected construction leaks one shapes graph. A `ConnectorValidator` is built once
+    /// at startup and a rejection aborts it, so there is no path on which that accumulates.)
     pub fn new(
         shapes_ttl: &str,
         all_kinds: &[(&'static str, &'static str)],
@@ -312,9 +372,57 @@ impl ConnectorValidator {
             .map(|(kind, _)| *kind)
             .collect();
 
+        // D8 amended (contreforts/contreforts-workspace#19, 2026-08-11): split the shapes by
+        // declared write intent, once. A shape that declares none lands in both lists.
+        //
+        // `Shape` is `Clone` and the clones borrow the same leaked `shapes_graph`, so this is a
+        // shallow duplication of a handful of shapes held for the process's lifetime, not a
+        // second parse.
+        let mut create_shapes: Vec<Shape<'static>> = Vec::new();
+        let mut update_shapes: Vec<Shape<'static>> = Vec::new();
+        for shape in &shapes {
+            // Not `unwrap_or(Always)`. A `contreforts:writeIntent` this crate cannot read is a
+            // broken declaration, and treating it as "applies to both" would start the server
+            // with the create shape -- the one carrying `sh:minCount 1` on required secrets --
+            // silently enforcing itself on updates, or the update shape silently not enforcing
+            // itself on creates. This is the only place that check can run for a
+            // `ConnectorValidator`: it never runs meta-shape META-6 or `lint::write_intent`
+            // (see this module's own header, and `product_graph.rs`'s note that it "never runs
+            // contreforts-declaration's D2/D15/... lints").
+            let scope = write_intent::scope_of(shapes_graph, shape.node).map_err(|message| {
+                ConnectorValidatorError(format!(
+                    "shape {} declares an unusable contreforts:writeIntent: {message}",
+                    shape.node
+                ))
+            })?;
+            if scope.admits(WriteIntent::Create) {
+                create_shapes.push(shape.clone());
+            }
+            if scope.admits(WriteIntent::Update) {
+                update_shapes.push(shape.clone());
+            }
+        }
+
+        // Refused at construction, not tolerated per write: a class with shapes for one intent
+        // and none for the other would validate the uncovered intent against an empty shape
+        // list, which SHACL reports as conforming -- every such write accepted with nothing
+        // checked. `Ok(Conforms)` would be a lie the caller has no way to detect. See
+        // `write_intent::coverage_gaps` for why "create-only on purpose" is not a reading this
+        // accepts.
+        let gaps = write_intent::coverage_gaps(&shapes, shapes_graph);
+        if !gaps.is_empty() {
+            let lines: Vec<String> = gaps.iter().map(|gap| gap.message()).collect();
+            return Err(ConnectorValidatorError(format!(
+                "the shapes graph has {} incomplete write-intent pair(s):\n  {}",
+                gaps.len(),
+                lines.join("\n  "),
+            )));
+        }
+
         let validator = Self {
             shapes_graph,
-            shapes,
+            create_shapes,
+            update_shapes,
             declared_target_classes,
             declared_connector_iris,
             unvalidated_kinds,
@@ -343,8 +451,24 @@ impl ConnectorValidator {
     /// `Ok(NotDeclared)` and `Ok(Conforms)` both mean "the write may proceed"; `Err` carries
     /// every violation SHACL found (never just the first), for the caller to fail the write
     /// with.
+    ///
+    /// ## `intent` (contreforts/contreforts-workspace#19, D8 amended -- 2026-08-11)
+    ///
+    /// Which shapes run is chosen by the verb the caller is serving, because a required secret
+    /// is required at create and absent-means-unchanged at update, and no single shape can say
+    /// both. `WriteIntent::Create` runs the declaration's create shapes (`sh:minCount 1` on
+    /// required secrets and all); `WriteIntent::Update` runs its update shapes, which omit that
+    /// `sh:minCount` so a field the API deliberately never served back is not demanded on the
+    /// way in. A shape declaring no `contreforts:writeIntent` -- every declaration on disk today
+    /// -- runs under both, so this argument changes nothing until a connector is migrated.
+    ///
+    /// It is a required argument with no default for the reason spelled out on [`WriteIntent`]:
+    /// the two modes differ in how permissive they are, so a forgotten one would resolve to the
+    /// permissive answer and produce no error, no log line and no failing test -- only a
+    /// connector stored without the credential it was supposed to be created with.
     pub fn validate(
         &self,
+        intent: WriteIntent,
         class_iri: &str,
         instance: &Graph,
     ) -> Result<ConnectorValidationOutcome, Vec<ConnectorViolation>> {
@@ -367,7 +491,7 @@ impl ConnectorValidator {
             }]
         })?;
 
-        let report: ValidationReport<'_> = shacl_validate(&dataset, &self.shapes);
+        let report: ValidationReport<'_> = shacl_validate(&dataset, self.shapes_for(intent));
         self.validated_write_count.fetch_add(1, Ordering::Relaxed);
 
         if *report.get_conforms() {
@@ -388,6 +512,19 @@ impl ConnectorValidator {
                 },
             })
             .collect())
+    }
+
+    /// The shapes [`Self::validate`] runs for `intent` -- the whole of "the validator selects by
+    /// verb" (contreforts/contreforts-workspace#19, D8 amended). The full shapes *graph* is still
+    /// what goes into the [`ValidationDataset`], unfiltered: it is the graph SHACL resolves
+    /// `sh:node`/`sh:sparql` references through, and it already contains shapes that are not in
+    /// the validated list (nested shapes, other connectors) -- narrowing the list is what
+    /// selects, narrowing the graph would only break lookups.
+    fn shapes_for(&self, intent: WriteIntent) -> &[Shape<'static>] {
+        match intent {
+            WriteIntent::Create => &self.create_shapes,
+            WriteIntent::Update => &self.update_shapes,
+        }
     }
 
     /// Connector kinds with no `sh:targetClass` in the shapes handed to [`Self::new`], computed

@@ -25,9 +25,16 @@
 //!     production caller (`contreforts_declaration::declarations` over
 //!     `contreforts-product`'s unioned graph) that would false-positive
 //!     under a graph-wide scope.
+//!   - [`write_intent`] -- D8 amended (contreforts/contreforts-workspace#19,
+//!     2026-08-11): a class with a `contreforts:writeIntent "create"` shape
+//!     must also have an update shape, and vice versa. Existential in the
+//!     same way [`structural`] is, and load-bearing for the same reason: an
+//!     intent with no applicable shape does not reject writes, it conforms
+//!     vacuously and accepts every one of them unchecked.
 
 pub(crate) mod config_field;
 pub(crate) mod core_ns;
 pub(crate) mod entity_kind;
 pub(crate) mod structural;
+pub(crate) mod write_intent;
 pub(crate) mod xone;

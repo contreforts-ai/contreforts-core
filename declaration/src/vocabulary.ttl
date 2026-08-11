@@ -16,6 +16,15 @@
 # field name can silently disagree with its declaration and nothing
 # detects it, unless the correspondence is stated in the declaration
 # itself. See the term's own rdfs:comment below for the exact rule.
+#
+# contreforts:writeIntent (contreforts/contreforts-workspace#19, D8 amended
+# 2026-08-11) is the sixth, and clears the same bar: it is not invented
+# speculatively either. contreforts:secret already makes a value write-only,
+# which is what makes an empty box on an update form mean "unchanged" -- and
+# that is precisely what makes sh:minCount 1 on a required secret
+# unstateable in a single shape, since it must hold at create and must not
+# at update. Either the distinction is declarable, or the rule moves into
+# contreforts' Rust where a third-party connector author cannot write it.
 ########################################################################
 
 @prefix rdf:         <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -95,6 +104,47 @@ contreforts:configField -- both are existential rules a SHACL shape cannot
 express (absence of a violation vacuously conforms), so they are enforced
 as a Rust lint, not here.""" ;
     rdfs:domain sh:PropertyShape ;
+    rdfs:range xsd:string .
+
+contreforts:writeIntent a rdf:Property ;
+    rdfs:label "write intent" ;
+    rdfs:comment """Scopes a connector's sh:NodeShape to one of the two write
+verbs (D8 amended, contreforts/contreforts-workspace#19, 2026-08-11). Value
+is "create" or "update", at most once.
+
+Why it exists: a required secret is required when a connector is CREATED,
+and absent-means-unchanged when it is UPDATED -- because contreforts:secret
+makes the value write-only, so a form submitting an empty box is saying
+"unchanged", not "clear". One shape cannot say both: sh:minCount 1 on the
+secret either holds or it does not. So a connector declares two shapes over
+one sh:targetClass -- a create shape carrying sh:minCount 1 on its required
+secrets, and an update shape without it -- and the validator selects by the
+verb it was called with.
+
+Rejected alternative: one shape, plus the create-only rule hard-coded in
+contreforts' own write path. This is a framework -- third parties write
+connectors, and a connector author writes Turtle, not Rust in this
+repository. A rule living in the write path could never be stated by an
+external author for their own secret. The cost is real (the spike measured
+275 lines of Turtle for an 8-line, 3-field struct, and this doubles the
+secret half of that); that is an argument for a generator, not for moving
+the rule out of the declaration that owns it.
+
+ABSENCE MEANS BOTH, which is deliberately the opposite of the explicit
+opt-in rule contreforts:configField and contreforts:entityKind established.
+A shape with no contreforts:writeIntent validates creates and updates
+alike, because that is exactly what every declaration meant before this
+term existed, and the alternative would invalidate every unmigrated
+connector on the day the term landed.
+
+Declaring one intent for a class obliges the declaration to cover the other
+too -- a class with a create shape and no update shape does not reject
+updates, it accepts every one of them against zero shapes, which SHACL
+reports as conforming. That is an existential rule over the *other* shapes
+targeting the same class, which no SHACL constraint can express (absence of
+a violation conforms vacuously), so it is enforced as a Rust lint
+(lint::write_intent), exactly as contreforts:configField's two rules are.""" ;
+    rdfs:domain sh:NodeShape ;
     rdfs:range xsd:string .
 
 contreforts:entityKind a rdf:Property ;

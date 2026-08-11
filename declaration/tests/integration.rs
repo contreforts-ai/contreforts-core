@@ -6,7 +6,9 @@
 //! `naive_xone_declaration_is_rejected_naming_the_missing_predicates` --
 //! without it, D14 could be written to agree with itself.
 
-use contreforts_declaration::{CONCEPTS_TTL, GroupDescriptor, Rule, validate};
+use contreforts_declaration::{
+    CONCEPTS_TTL, GroupDescriptor, IntentScope, Rule, declarations, validate,
+};
 
 const O365_DECLARATION: &str = include_str!("fixtures/o365-declaration.ttl");
 const O365_NAIVE_XONE: &str = include_str!("fixtures/o365-shape-naive-xone.ttl");
@@ -36,6 +38,12 @@ const SYNTHETIC_VARIANT_ONLY_GROUP: &str =
 // contreforts-core#31: a malformed (negative) sh:minLength, distinct from an absent one.
 const SYNTHETIC_NEGATIVE_MIN_LENGTH: &str =
     include_str!("fixtures/synthetic-negative-min-length.ttl");
+// contreforts-workspace#19, D8 amended: the create/update shape pair, the half-written pair,
+// and the term put somewhere the validator never reads it.
+const WRITE_INTENT_PAIR: &str = include_str!("fixtures/write-intent-pair.ttl");
+const WRITE_INTENT_CREATE_ONLY: &str = include_str!("fixtures/write-intent-create-only.ttl");
+const WRITE_INTENT_ON_PROPERTY_SHAPE: &str =
+    include_str!("fixtures/write-intent-on-property-shape.ttl");
 
 #[test]
 fn hardened_o365_declaration_validates_clean() {
@@ -1005,4 +1013,106 @@ fn negative_min_length_is_recorded_as_invalid_not_absent() {
         "nml:plainField declares no sh:minLength at all; min_length_invalid must also be None -- \
          only a MALFORMED value populates it, not a genuinely absent one"
     );
+}
+
+// ---------------------------------------------------------------------
+// D8's create-versus-update asymmetry, declaration side
+// (contreforts/contreforts-workspace#19, "D8 amended -- 2026-08-11")
+// ---------------------------------------------------------------------
+
+#[test]
+fn a_write_intent_pair_validates_and_is_readable_as_two_scoped_declarations() {
+    // Catches two things at once, both of which would make the mechanism useless while leaving
+    // every other test green:
+    //   1. the pipeline rejecting the very arrangement D8 prescribes (two node shapes over one
+    //      sh:targetClass) -- e.g. a coverage lint that counted shapes instead of intents;
+    //   2. `Declaration::intent_scope` being hard-coded to `Always`, which would leave the two
+    //      members of a pair indistinguishable to every consumer downstream of `declarations()`
+    //      and make a form generator render the connector twice with no way to choose.
+    validate(WRITE_INTENT_PAIR).expect("a complete create/update pair must validate clean");
+
+    let per_shape =
+        declarations(WRITE_INTENT_PAIR).expect("the same pipeline, split back out per shape");
+    assert_eq!(per_shape.len(), 2, "one Declaration per node shape");
+
+    let create = per_shape
+        .iter()
+        .find(|d| d.intent_scope == IntentScope::CreateOnly)
+        .expect("the create half must be identifiable by its intent_scope");
+    let update = per_shape
+        .iter()
+        .find(|d| d.intent_scope == IntentScope::UpdateOnly)
+        .expect("the update half must be identifiable by its intent_scope");
+
+    assert_eq!(
+        create.target_class, update.target_class,
+        "a pair is two shapes over ONE class -- that is what makes selecting between them \
+         necessary in the first place"
+    );
+
+    // The one triple that differs, read back through the model: the secret is required at
+    // create and not at update. If this ever reads the same on both sides, the fixture stopped
+    // expressing the asymmetry and every D8 test above it is testing nothing.
+    let min_count = |d: &contreforts_declaration::Declaration| {
+        d.properties
+            .iter()
+            .find(|p| p.path.ends_with("#apiToken"))
+            .expect("apiToken present on both halves")
+            .min_count
+    };
+    assert_eq!(min_count(create), Some(1), "required when created");
+    assert_eq!(
+        min_count(update),
+        None,
+        "absent means unchanged when updated -- contreforts:secret makes the value write-only, \
+         so an update carrying nothing for it is not clearing it"
+    );
+}
+
+#[test]
+fn a_declaration_scoped_to_create_with_no_update_shape_is_rejected() {
+    // Catches: the D8 coverage lint being deleted or never wired into the pipeline. A SHACL
+    // constraint is universal over its RESOLVED target set, so the uncovered intent resolves
+    // zero focus nodes and conforms -- this declaration would not reject updates, it would
+    // accept every one of them unchecked. Nothing else in this file or in SHACL can see that.
+    let violations = validate(WRITE_INTENT_CREATE_ONLY)
+        .expect_err("a create shape with no update shape must be rejected");
+
+    let d8: Vec<_> = violations
+        .iter()
+        .filter(|v| v.rule() == Rule::D8WriteIntent)
+        .collect();
+    assert_eq!(
+        d8.len(),
+        1,
+        "expected exactly one write-intent coverage violation, got: {violations}"
+    );
+
+    let rendered = violations.to_string();
+    for needle in ["WriteIntentConnector", "update"] {
+        assert!(
+            rendered.contains(needle),
+            "the rejection must name the class and the uncovered intent; missing {needle:?} \
+             in:\n{rendered}"
+        );
+    }
+
+    println!("write-intent coverage rejection message:\n{rendered}");
+}
+
+#[test]
+fn write_intent_on_a_property_shape_is_rejected_by_the_meta_shapes() {
+    // Catches: META-6's sh:targetClass half being dropped. The selector only ever consults
+    // shapes that target a class, so the term on a property shape is read by nobody -- the
+    // declaration would validate, the server would start, and "this field is create-only" would
+    // be quietly false. An annotation with no effect is worth a violation.
+    let violations = validate(WRITE_INTENT_ON_PROPERTY_SHAPE)
+        .expect_err("contreforts:writeIntent on a property shape must be rejected");
+
+    assert!(
+        violations.iter().any(|v| v.rule() == Rule::MetaShape),
+        "the misplacement is a meta-shape (META-6) violation, got: {violations}"
+    );
+
+    println!("misplaced-writeIntent rejection message:\n{violations}");
 }

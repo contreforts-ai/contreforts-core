@@ -213,3 +213,58 @@ meta:ConfigFieldIsString a sh:NodeShape ;
         sh:maxCount 1 ;
         sh:message "contreforts:configField must be a single xsd:string value." ;
     ] .
+
+########################################################################
+# META-6 -- contreforts:writeIntent, where present, is one of "create" or
+# "update", at most once, and sits on a shape that actually carries
+# sh:targetClass.
+#
+# D8 amended (contreforts/contreforts-workspace#19, 2026-08-11). What is
+# expressible here is purely universal: *where* the term appears, what it
+# may say and where it may sit. The rule that a class scoped to one intent
+# must also be covered for the other is existential over the OTHER shapes
+# targeting the same class -- the same thing no SHACL constraint can express
+# (an absence resolves to zero focus nodes and conforms vacuously), and it
+# lives in lint::write_intent with D15's two rules.
+#
+# The sh:targetClass half is not decoration. The validator selects shapes by
+# comparing this term against the verb it was called with, and it only ever
+# consults shapes that target a class; the term on a property shape or on a
+# nested sh:node shape would be read by nothing at all. A declaration that
+# writes it there is asserting something with no effect, which is worth a
+# violation rather than a shrug.
+#
+# No real declaration carries this term yet -- migrating the ten connectors
+# is a separate step -- so today this constrains only the synthetic test
+# fixtures that do.
+#
+# Note for that migration, because META-1 above is not obvious once a
+# connector has two targeted shapes instead of one: META-1 targets EVERY
+# sh:targetClass subject, so the create shape and the update shape must EACH
+# carry exactly one contreforts:category, and META-4 requires sh:name on
+# each one's own top-level property shapes. That duplication is the measured
+# cost D8 accepted, not an oversight.
+#
+# Deliberately overlaps lint::write_intent's own value check rather than
+# deferring to it: ConnectorValidator (the server-side write validator) never
+# runs these meta-shapes at all, so the Rust reader must reject a bad value
+# on its own account. Keeping the rule here too is what a connector author
+# reading this file sees. The cost is one mistake reported twice from a
+# connector's build.rs.
+########################################################################
+
+meta:WriteIntentIsCreateOrUpdate a sh:NodeShape ;
+    rdfs:comment "contreforts:writeIntent, wherever it is used, must be a single \"create\" or \"update\" on a shape that carries sh:targetClass." ;
+    sh:targetSubjectsOf contreforts:writeIntent ;
+    sh:property [
+        sh:path contreforts:writeIntent ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:in ( "create" "update" ) ;
+        sh:message "contreforts:writeIntent must be a single xsd:string, either \"create\" (the shape validating a connector being created, where a required secret carries sh:minCount 1) or \"update\" (the shape validating a change to an existing one, where an absent secret means unchanged)." ;
+    ] ;
+    sh:property [
+        sh:path sh:targetClass ;
+        sh:minCount 1 ;
+        sh:message "contreforts:writeIntent belongs on a connector's own sh:targetClass-bearing node shape -- the validator selects whole targeted shapes by write intent, so the term is read from nowhere else and would have no effect on a property shape or a nested sh:node shape." ;
+    ] .

@@ -1,0 +1,59 @@
+# SYNTHETIC, not a real connector. The D8 arrangement in full
+# (contreforts/contreforts-workspace#19, "D8 amended -- 2026-08-11"): two
+# sh:NodeShapes over ONE sh:targetClass, scoped by contreforts:writeIntent,
+# differing in exactly one triple -- `sh:minCount 1` on the secret, present
+# on the create shape and absent from the update shape.
+#
+# That single triple is the whole asymmetry: a required secret is required
+# when a connector is created, and absent-means-unchanged when it is
+# updated, because contreforts:secret makes the value write-only and a form
+# submitting an empty box is saying "unchanged", not "clear".
+#
+# This fixture also shows what migrating a connector actually costs, which
+# is the reason D8's own decision comment calls for a generator rather than
+# hand-written pairs: META-1 targets every sh:targetClass subject, so BOTH
+# shapes carry contreforts:category, and META-4 wants sh:name on both
+# shapes' top-level property shapes. Everything is stated twice.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix witest:       <https://contreforts.ds-labs.org/ontologies/write-intent-test#> .
+
+witest:WriteIntentCreateShape a sh:NodeShape ;
+    sh:targetClass witest:WriteIntentConnector ;
+    contreforts:category "test-only" ;
+    contreforts:writeIntent "create" ;
+    sh:property [
+        sh:path witest:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path witest:apiToken ;
+        sh:name "API token" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        contreforts:secret true ;
+    ] .
+
+witest:WriteIntentUpdateShape a sh:NodeShape ;
+    sh:targetClass witest:WriteIntentConnector ;
+    contreforts:category "test-only" ;
+    contreforts:writeIntent "update" ;
+    sh:property [
+        sh:path witest:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path witest:apiToken ;
+        sh:name "API token" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        contreforts:secret true ;
+    ] .
