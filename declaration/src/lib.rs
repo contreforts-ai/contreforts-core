@@ -69,6 +69,16 @@
 //! contreforts/contreforts-workspace#58 (comment 7791), item D3a, since both `contreforts-kg`
 //! and the future `contreforts-config` (D3c) need it and neither should have to depend on the
 //! other to reach it. See that module's own docs for the case-1/case-2 undeclared-kind policy.
+//!
+//! ## Create versus update
+//!
+//! [`ConnectorValidator::validate`] takes a [`WriteIntent`] and validates against the shapes a
+//! declaration scoped to that verb (contreforts/contreforts-workspace#19, "D8 amended --
+//! 2026-08-11"): a required secret is required at create and absent-means-unchanged at update,
+//! and one SHACL shape cannot state both, so a connector declares two. The term that scopes them
+//! is `contreforts:writeIntent`; the rule stays in the connector author's Turtle rather than in
+//! contreforts' write path, because a third party writing a connector must be able to state it
+//! for their own fields. [`WriteIntent`] has no default -- see its own doc comment.
 
 mod connector_validation;
 mod error;
@@ -76,6 +86,7 @@ mod form_schema;
 mod lint;
 mod model;
 mod validate;
+mod write_intent;
 
 pub use connector_validation::{
     ConnectorDeclarations, ConnectorIris, ConnectorValidationOutcome, ConnectorValidator,
@@ -88,15 +99,21 @@ pub use form_schema::{
 };
 pub use model::{Declaration, DeclarationVariant, GroupDescriptor, PropertyShape};
 pub use validate::{declarations, validate};
+pub use write_intent::{IntentScope, WriteIntent};
 
-/// The declaration vocabulary (Part 1): five terms in
+/// The declaration vocabulary (Part 1): six terms in
 /// `https://contreforts.ds-labs.org/ontologies/declaration#` --
 /// `contreforts:secret`, `contreforts:category`, `contreforts:uiShape`,
 /// `contreforts:configField` (the fourth, added by
-/// contreforts/contreforts-core#16, D15), and `contreforts:entityKind`
+/// contreforts/contreforts-core#16, D15), `contreforts:entityKind`
 /// (the fifth, added by contreforts/contreforts-kg#30: names the
 /// `EntityKind::as_str()` value an `rdfs:Class` is minted for, the same
-/// "explicit opt-in, absence is meaningful" rule D15 already established).
+/// "explicit opt-in, absence is meaningful" rule D15 already established),
+/// and `contreforts:writeIntent` (the sixth, added by
+/// contreforts/contreforts-workspace#19's amended D8: scopes a node shape to
+/// the create or the update verb, so "this secret is required at create" is
+/// something the declaration states rather than something contreforts'
+/// write path hard-codes for other people's fields -- see [`WriteIntent`]).
 /// Embedded so a caller can inspect or re-serve it without a filesystem
 /// dependency on this crate's source layout.
 pub const VOCABULARY_TTL: &str = include_str!("vocabulary.ttl");
@@ -129,8 +146,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vocabulary_defines_exactly_the_five_terms() {
-        for term in ["secret", "category", "uiShape", "configField", "entityKind"] {
+    fn vocabulary_defines_exactly_the_six_terms() {
+        for term in [
+            "secret",
+            "category",
+            "uiShape",
+            "configField",
+            "entityKind",
+            "writeIntent",
+        ] {
             assert!(
                 VOCABULARY_TTL.contains(&format!("contreforts:{term} a rdf:Property")),
                 "vocabulary.ttl should define contreforts:{term}"

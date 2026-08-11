@@ -1,0 +1,36 @@
+# SYNTHETIC, not a real connector. `write-intent-pair.ttl` with the update
+# half deleted -- the one mistake the two-shape design makes easy and that
+# nothing else would catch (contreforts/contreforts-workspace#19, "D8
+# amended -- 2026-08-11").
+#
+# It has to be a Rust lint rather than a meta-shape, and the reason is the
+# same one lint::structural exists for: a SHACL constraint is universally
+# quantified over its RESOLVED target set, so the update intent -- with no
+# applicable shape at all -- resolves zero focus nodes and conforms
+# vacuously. A connector declared this way would not reject updates. It
+# would accept every one of them with nothing checked, and report
+# conformance while doing it.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix witest:       <https://contreforts.ds-labs.org/ontologies/write-intent-test#> .
+
+witest:WriteIntentCreateShape a sh:NodeShape ;
+    sh:targetClass witest:WriteIntentConnector ;
+    contreforts:category "test-only" ;
+    contreforts:writeIntent "create" ;
+    sh:property [
+        sh:path witest:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path witest:apiToken ;
+        sh:name "API token" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        contreforts:secret true ;
+    ] .

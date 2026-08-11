@@ -1,0 +1,32 @@
+# SYNTHETIC, not a real connector. contreforts:writeIntent on a PROPERTY
+# shape instead of on the connector's own sh:targetClass-bearing node shape
+# (contreforts/contreforts-workspace#19, "D8 amended -- 2026-08-11").
+#
+# The validator selects whole targeted shapes by write intent, so the term
+# here is read by nothing at all: this declaration would validate, the
+# server would start, and the author's belief that "this one field is
+# create-only" would be false with no symptom. Meta-shape META-6 rejects it
+# instead -- an annotation with no effect is worth a violation, not a shrug.
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix contreforts:  <https://contreforts.ds-labs.org/ontologies/declaration#> .
+@prefix witest:       <https://contreforts.ds-labs.org/ontologies/write-intent-test#> .
+
+witest:MisplacedShape a sh:NodeShape ;
+    sh:targetClass witest:MisplacedConnector ;
+    contreforts:category "test-only" ;
+    sh:property [
+        sh:path witest:label ;
+        sh:name "Label" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path witest:apiToken ;
+        sh:name "API token" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        contreforts:secret true ;
+        contreforts:writeIntent "create" ;
+    ] .

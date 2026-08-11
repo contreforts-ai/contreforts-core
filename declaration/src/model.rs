@@ -27,6 +27,7 @@ use shacl_rust::utils::{get_boolean_value, get_integer_value, get_string_value};
 use shacl_rust::vocab::sh;
 
 use crate::error::Violation;
+use crate::write_intent::{self, IntentScope};
 
 // The three vocabulary.ttl predicates that carry application data SHACL
 // has no term for at all, so the typed `Shape` API cannot see them under
@@ -376,6 +377,23 @@ pub struct Declaration {
     /// empty for a connector with no tagged union. See
     /// [`DeclarationVariant`].
     pub variants: Vec<DeclarationVariant>,
+    /// Which write verb this node shape describes: `contreforts:writeIntent`
+    /// (contreforts/contreforts-workspace#19, "D8 amended -- 2026-08-11"),
+    /// or [`IntentScope::Always`] when it declares none -- which every
+    /// declaration on disk today does.
+    ///
+    /// Carried here, rather than left implicit, because after D8 a migrated
+    /// connector contributes **two** node shapes over one `sh:targetClass`,
+    /// so [`crate::declarations`] returns two `Declaration`s for it. Without
+    /// this field they would be near-identical and indistinguishable, and a
+    /// consumer that renders one entry per `Declaration` would render the
+    /// connector twice with no way to tell which was which -- the same
+    /// "absence presenting as success" defect contreforts-config-api#27 item
+    /// 3 already had to fix once in this file (see `build_declaration`).
+    /// A consumer generating a *form* wants the [`IntentScope::UpdateOnly`]
+    /// member of a pair when editing and the [`IntentScope::CreateOnly`] one
+    /// when adding; picking is now expressible.
+    pub intent_scope: IntentScope,
 }
 
 /// Presentation metadata not modeled by SHACL Core's typed `Shape` API,
@@ -894,6 +912,14 @@ fn build_declaration_for_shape(
 
     let category = get_string_value(graph, shape.node, CATEGORY_PREDICATE);
     let ui_shape = get_string_value(graph, shape.node, UI_SHAPE_PREDICATE);
+    // Propagated, not defaulted (contreforts/contreforts-workspace#19, D8 amended): an
+    // unreadable contreforts:writeIntent must not collapse to `Always`, which would silently
+    // make a create-only shape apply to updates as well. Unreachable in practice --
+    // `lint::write_intent` has already failed the same read by the time `run_pipeline` calls
+    // this -- and reported as a violation rather than an `expect` for the reason `category`'s
+    // own doc comment gives: a bug in the lints should fail loud, not panic.
+    let intent_scope = write_intent::scope_of(graph, shape.node)
+        .map_err(|message| Violation::d8_write_intent(Some(shape.node.to_string()), message))?;
     // contreforts/contreforts-core#33, phase F item W2: both already parsed by shacl-rust's
     // `apply_common_shape_properties` (sh:name falling back to rdfs:label for `label`,
     // sh:description for `description`) -- no graph read or SPARQL needed here at all.
@@ -920,6 +946,7 @@ fn build_declaration_for_shape(
         groups,
         properties,
         variants,
+        intent_scope,
     })
 }
 
@@ -941,11 +968,20 @@ const NO_CONNECTOR_SHAPE_MESSAGE: &str = "no sh:NodeShape with sh:targetClass fo
 /// `properties`/`variants` are folded into the one `Declaration` returned
 /// here instead, so `.properties` genuinely reflects the whole graph
 /// rather than one arbitrary survivor. `.shape`/`.target_class`/
-/// `.category`/`.ui_shape` still describe only the first shape found --
-/// those four are inherently singular per connector and have no honest
-/// merge across differently-typed connectors; a caller that needs them
-/// scoped per kind should use [`build_declarations`] instead, which is
+/// `.category`/`.ui_shape`/`.intent_scope` still describe only the first
+/// shape found -- those five are inherently singular per shape and have no
+/// honest merge across differently-typed connectors; a caller that needs
+/// them scoped per kind should use [`build_declarations`] instead, which is
 /// exactly what it is for.
+///
+/// `.intent_scope` (contreforts/contreforts-workspace#19, D8 amended) makes
+/// that caveat sharper than it was, and the sharpening is deliberate rather
+/// than a regression: a graph holding a migrated connector's create *and*
+/// update shape folds both shapes' properties into one `Declaration` whose
+/// single `intent_scope` can only name one of them. That fold was already
+/// dishonest for `.category` and `.ui_shape` across connectors; for a D8
+/// pair it is dishonest within one connector, which is a further reason
+/// [`build_declarations`] is the entry point a form generator should use.
 pub(crate) fn build_declaration(
     shapes: &[Shape<'_>],
     graph: &oxigraph::model::Graph,

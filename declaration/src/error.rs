@@ -34,6 +34,13 @@ pub enum Rule {
     /// -- see `lint::entity_kind`'s own doc comment for why the scope is
     /// per-namespace, not graph-wide.
     EntityKind,
+    /// The D8 `contreforts:writeIntent` lint
+    /// (contreforts/contreforts-workspace#19, "D8 amended -- 2026-08-11"):
+    /// the term's value is `"create"` or `"update"` and appears at most
+    /// once, and a class scoped to one write intent has a shape for the
+    /// other too -- see `lint::write_intent`'s own doc comment for why the
+    /// coverage half cannot be a meta-shape.
+    D8WriteIntent,
 }
 
 impl fmt::Display for Rule {
@@ -46,6 +53,7 @@ impl fmt::Display for Rule {
             Rule::Structural => "structural",
             Rule::D15ConfigField => "D15 (contreforts:configField)",
             Rule::EntityKind => "entityKind (contreforts:entityKind)",
+            Rule::D8WriteIntent => "D8 (contreforts:writeIntent)",
         };
         write!(f, "{s}")
     }
@@ -100,6 +108,10 @@ impl Violation {
 
     pub fn entity_kind(subject: Option<String>, message: impl Into<String>) -> Self {
         Self::new(Rule::EntityKind, subject, message)
+    }
+
+    pub fn d8_write_intent(subject: Option<String>, message: impl Into<String>) -> Self {
+        Self::new(Rule::D8WriteIntent, subject, message)
     }
 
     pub fn rule(&self) -> Rule {

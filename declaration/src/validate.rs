@@ -49,8 +49,10 @@ fn violation_from_meta_shape_result(result: &ValidationResult<'_>) -> Violation 
 
 /// Validates `turtle` as a connector declaration: Part 2's meta-shapes,
 /// then the D14 (`sh:xone` cross-exclusion), D2 (`core:` namespace),
-/// structural, D15 (`contreforts:configField`) and entityKind
-/// (`contreforts:entityKind` duplicate-value, contreforts-kg#30) lints
+/// structural, D15 (`contreforts:configField`), entityKind
+/// (`contreforts:entityKind` duplicate-value, contreforts-kg#30) and D8
+/// (`contreforts:writeIntent` create/update coverage,
+/// contreforts-workspace#19) lints
 /// from Part 3, all run to completion and combined --
 /// never short-circuited on the first failure, per Part 4's requirement
 /// that both real callers (a connector's `build.rs`, and the C3
@@ -144,6 +146,14 @@ fn run_pipeline<T>(
         violations.extend(lint::structural::check(shapes));
         violations.extend(lint::xone::check(shapes));
         violations.extend(lint::config_field::check(shapes, &declaration_graph));
+        // D8 amended (contreforts/contreforts-workspace#19, 2026-08-11). Runs over the same
+        // `own_shapes`/`declaration_graph` pair as the two lints above and for the same reason
+        // they are Rust rather than SHACL -- the rule is about the *other* shapes targeting one
+        // class, which no per-node constraint can see. Note that it is the only lint here whose
+        // absence is silently permissive rather than silently restrictive: a missing update
+        // shape does not reject updates, it accepts them all unchecked. See
+        // `lint::write_intent`.
+        violations.extend(lint::write_intent::check(shapes, &declaration_graph));
     }
     violations.extend(lint::core_ns::check(&declaration_graph));
     violations.extend(lint::entity_kind::check(&declaration_graph));
