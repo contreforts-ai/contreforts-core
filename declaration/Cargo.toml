@@ -18,7 +18,17 @@ shacl-rust = "=0.2.9"
 # NOT `{ workspace = true }`: this crate must depend on nothing about the
 # superproject it happens to be nested in right now (see lib.rs), so its
 # manifest has to stand on its own even outside that workspace.
-oxigraph = "0.5"
+#
+# default-features = false: this crate only ever opens `Store::new()` (see
+# src/model.rs) - an in-memory store - never `Store::open(path)`, so it has
+# no use for oxigraph's default `rocksdb` feature (which pulls in
+# `oxrocksdb-sys`, a from-source C++/cmake build - real compile-time cost
+# for a capability nothing here exercises). No `rocksdb` opt-in feature
+# added here either: add one if/when an actual consumer needs
+# `Store::open`, not preemptively - matches contreforts-kg's own
+# `rocksdb` feature shape (see its Cargo.toml) for the crate that *does*
+# need the choice, rather than copying that shape somewhere it's unused.
+oxigraph = { version = "0.5", default-features = false }
 thiserror = "2"
 # Added by the connector_validation module's move from contreforts-kg
 # (contreforts/contreforts-workspace#58, comment 7791, item D3a):
